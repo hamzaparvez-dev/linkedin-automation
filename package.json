@@ -1,0 +1,11 @@
+{
+  "name": "leadgen",
+  "private": true,
+  "description": "Leadgen repo — use npm run dashboard:dev to start API + UI together",
+  "scripts": {
+    "dashboard:dev": "concurrently -k -n api,ui -c blue,green \"python3 -m uvicorn dashboard_app.main:app --reload --host 127.0.0.1 --port 8080\" \"npm run dev --prefix frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

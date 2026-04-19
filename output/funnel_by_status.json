@@ -1,0 +1,14 @@
+[
+  {
+    "status": "ENRICHED",
+    "c": 154
+  },
+  {
+    "status": "NEW",
+    "c": 40
+  },
+  {
+    "status": "ASSIGNED_TO_ACCOUNT",
+    "c": 11
+  }
+]

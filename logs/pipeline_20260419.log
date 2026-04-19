@@ -1,0 +1,104 @@
+2026-04-19 20:59:21,364  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-19 21:00:25,565  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-19 21:00:25,576  INFO      Phantombuster mapping account=acc_a linkedin_profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss connect_agent=7815137018095455 dm_agent=2058765657927603
+2026-04-19 21:00:25,580  INFO      Phantombuster mapping account=acc_b linkedin_profile=AQEDAQSH6jgByd-6AAABnaXsc7gAAAGdyfj3uFYAq8OfXUpNjYpjEZMrwVAzNiG5u6rRPk9eatIPkmCY6Ccbh6DDNDEs55bCQr24om7dIu8faEst6A_PihMONq2YmN7vq3F-kOsoVZqoofiJm0zoVEwR connect_agent=7815137018095455 dm_agent=2058765657927603
+2026-04-19 21:00:25,581  INFO      Phantombuster mapping account=acc_c linkedin_profile=AQEDASiAua0F00N2AAABnZcZoz8AAAGduyYnP1YAFMxvx4WMNKvArdFk0Iy7A6SA-EoNsPxv0jI7hWkV2Xx3tRPxkLgfxKxMiGu4j2rtktSAk5yh8rwDFzHMQCE2eiA7zrX3YW5cm02X3VImQaOTAlCw connect_agent=5682410923904850 dm_agent=7847457549195306
+2026-04-19 21:00:25,584  INFO      Engagement for account acc_a (dry_run=False, max_leads=50)
+2026-04-19 21:00:25,602  INFO      Connect hold: acc_a — outside_schedule
+2026-04-19 21:00:25,606  INFO      Engagement for account acc_b (dry_run=False, max_leads=50)
+2026-04-19 21:00:25,622  INFO      Connect hold: acc_b — outside_schedule
+2026-04-19 21:00:25,627  INFO      Engagement for account acc_c (dry_run=False, max_leads=50)
+2026-04-19 21:00:25,636  INFO      Connect hold: acc_c — outside_schedule
+2026-04-19 21:05:57,498  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-19 21:05:57,508  INFO      Phantombuster mapping account=acc_a linkedin_profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss connect_agent=7815137018095455 dm_agent=2058765657927603
+2026-04-19 21:05:57,508  INFO      Phantombuster mapping account=acc_b linkedin_profile=AQEDAQSH6jgByd-6AAABnaXsc7gAAAGdyfj3uFYAq8OfXUpNjYpjEZMrwVAzNiG5u6rRPk9eatIPkmCY6Ccbh6DDNDEs55bCQr24om7dIu8faEst6A_PihMONq2YmN7vq3F-kOsoVZqoofiJm0zoVEwR connect_agent=7815137018095455 dm_agent=2058765657927603
+2026-04-19 21:05:57,509  INFO      Phantombuster mapping account=acc_c linkedin_profile=AQEDASiAua0F00N2AAABnZcZoz8AAAGduyYnP1YAFMxvx4WMNKvArdFk0Iy7A6SA-EoNsPxv0jI7hWkV2Xx3tRPxkLgfxKxMiGu4j2rtktSAk5yh8rwDFzHMQCE2eiA7zrX3YW5cm02X3VImQaOTAlCw connect_agent=5682410923904850 dm_agent=7847457549195306
+2026-04-19 21:05:57,510  INFO      Engagement for account acc_a (dry_run=False, max_leads=50)
+2026-04-19 21:05:57,515  INFO      Connect hold: acc_a — outside_schedule
+2026-04-19 21:05:57,519  INFO      Engagement for account acc_b (dry_run=False, max_leads=50)
+2026-04-19 21:05:57,523  INFO      Connect hold: acc_b — outside_schedule
+2026-04-19 21:05:57,525  INFO      Engagement for account acc_c (dry_run=False, max_leads=50)
+2026-04-19 21:06:09,628  INFO      [phantom_start] action=connect account_id=acc_c agent_id=5682410923904850 lead_id=c98297a8d98d17fa99bbb267 linkedin_url=https://linkedin.com/in/markpith message=Hi Mark, I admire Nextvoyage's work in maritime software. I'd love to connect and share insights in the Web3 space.
+2026-04-19 21:06:09,629  INFO      [Phantombuster] engagement argument JSON (agent_id=5682410923904850): {"message": "Hi Mark, I admire Nextvoyage's work in maritime software. I'd love to connect and share insights in the Web3 space.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/markpith"}
+2026-04-19 21:06:09,630  INFO      [DEBUG] final_argument_json: {"message": "Hi Mark, I admire Nextvoyage's work in maritime software. I'd love to connect and share insights in the Web3 space.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/markpith"}
+2026-04-19 21:06:09,630  INFO      [phantom_bonus_argument] agent_id=5682410923904850 bonus={"sessionCookie": "li_at=AQEDASiAua…(158 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"}
+2026-04-19 21:06:09,631  INFO      [Phantombuster] launch API payload JSON: {"id": "5682410923904850", "argument": {"numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/markpith", "message": "Hi Mark, I admire Nextvoyage's work in maritime software. I'd love to connect and share insights in the Web3 space."}, "bonusArgument": "{\"sessionCookie\": \"li_at=AQEDASiAua…(158 chars)\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36\"}"}
+2026-04-19 21:06:18,531  INFO      [Phantombuster] Agent 5682410923904850 launched. Container: 5824377489149055
+2026-04-19 22:26:38,747  INFO      [phantom_end] action=connect account_id=acc_c agent_id=5682410923904850 lead_id=c98297a8d98d17fa99bbb267 ok=False container_id=(none) summary=exception:ConnectionError:('Connection aborted.', TimeoutError(60, 'Operation timed out'))
+2026-04-19 22:26:38,759  ERROR     Phantombuster connect failed account=acc_c lead=c98297a8d98d17fa99bbb267 profile=AQEDASiAua0F00N2AAABnZcZoz8AAAGduyYnP1YAFMxvx4WMNKvArdFk0Iy7A6SA-EoNsPxv0jI7hWkV2Xx3tRPxkLgfxKxMiGu4j2rtktSAk5yh8rwDFzHMQCE2eiA7zrX3YW5cm02X3VImQaOTAlCw
+Traceback (most recent call last):
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1349, in getresponse
+    response.begin()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 316, in begin
+    version, status, reason = self._read_status()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 277, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/socket.py", line 704, in readinto
+    return self._sock.recv_into(b)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1241, in recv_into
+    return self.read(nbytes, buffer)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1099, in read
+    return self._sslobj.read(len, buffer)
+TimeoutError: [Errno 60] Operation timed out
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/adapters.py", line 644, in send
+    resp = conn.urlopen(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/util/retry.py", line 490, in increment
+    raise reraise(type(error), error, _stacktrace)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/util/util.py", line 38, in reraise
+    raise value.with_traceback(tb)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1349, in getresponse
+    response.begin()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 316, in begin
+    version, status, reason = self._read_status()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 277, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/socket.py", line 704, in readinto
+    return self._sock.recv_into(b)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1241, in recv_into
+    return self.read(nbytes, buffer)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1099, in read
+    return self._sslobj.read(len, buffer)
+urllib3.exceptions.ProtocolError: ('Connection aborted.', TimeoutError(60, 'Operation timed out'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 508, in _process_connects
+    result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 250, in run_agent
+    result = self.wait_for_completion(cid, timeout_minutes=timeout_minutes)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 157, in wait_for_completion
+    resp = self.session.get(url, params={"id": container_id})
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 602, in get
+    return self.request("GET", url, **kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/adapters.py", line 659, in send
+    raise ConnectionError(err, request=request)
+requests.exceptions.ConnectionError: ('Connection aborted.', TimeoutError(60, 'Operation timed out'))
+2026-04-19 22:29:01,005  INFO      [phantom_start] action=connect account_id=acc_c agent_id=5682410923904850 lead_id=c32bd6f0e708337228a79eb0 linkedin_url=https://linkedin.com/in/prakashsomo message=Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights.
+2026-04-19 22:29:01,009  INFO      [Phantombuster] engagement argument JSON (agent_id=5682410923904850): {"message": "Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/prakashsomo"}
+2026-04-19 22:29:01,009  INFO      [DEBUG] final_argument_json: {"message": "Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/prakashsomo"}
+2026-04-19 22:29:01,011  INFO      [phantom_bonus_argument] agent_id=5682410923904850 bonus={"sessionCookie": "li_at=AQEDASiAua…(158 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"}
+2026-04-19 22:29:01,011  INFO      [Phantombuster] launch API payload JSON: {"id": "5682410923904850", "argument": {"numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/prakashsomo", "message": "Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights."}, "bonusArgument": "{\"sessionCookie\": \"li_at=AQEDASiAua…(158 chars)\", \"userAgent\": \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36\"}"}
+2026-04-19 22:29:05,609  INFO      [Phantombuster] Agent 5682410923904850 launched. Container: 7933141235973839

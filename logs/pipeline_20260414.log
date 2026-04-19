@@ -1,0 +1,82 @@
+2026-04-14 06:24:11,455  INFO      Web3 Apollo extraction started (target=300, per_page=100, max_pages=250)
+2026-04-14 06:24:13,082  ERROR     Apollo POST /mixed_people/search failed: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/v1/mixed_people/search
+2026-04-14 06:24:13,083  ERROR     Apollo search failed on page 1: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/v1/mixed_people/search
+2026-04-14 06:24:13,083  WARNING   No leads to write to /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 06:24:13,087  INFO      Wrote 0 qualified Web3 leads → /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 06:24:13,097  INFO      Apollo Web3 extraction finished: /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 06:28:37,683  INFO      Web3 Apollo extraction started (target=300, per_page=100, max_pages=250)
+2026-04-14 06:28:39,531  ERROR     Apollo POST /mixed_people/search failed: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/v1/mixed_people/search
+2026-04-14 06:28:39,531  ERROR     Apollo search failed on page 1: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/v1/mixed_people/search
+2026-04-14 06:28:39,532  WARNING   No leads to write to /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 06:28:39,535  INFO      Wrote 0 qualified Web3 leads → /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 06:28:39,540  INFO      Apollo Web3 extraction finished: /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 12:11:33,799  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-14 12:11:33,807  INFO      [Apollo] Starting extraction — target=40 (api_search, bulk_match=False)
+2026-04-14 12:11:35,403  INFO      [Apollo] Page 1: +100 leads | collected 40/40 (Apollo total_entries≈336166)
+2026-04-14 12:11:36,407  INFO      [Apollo] Extraction complete: 40 leads collected
+2026-04-14 12:11:36,410  INFO      [Apollo] Saved 40 leads → output/1_raw_leads.csv
+2026-04-14 12:11:36,558  INFO      Upserted 40 leads into SQLite (campaign=default-campaign)
+2026-04-14 12:11:36,561  INFO      Skipping Phantombuster enrichment
+2026-04-14 12:11:36,570  INFO      Assigned 0 qualified leads across accounts
+2026-04-14 12:11:36,577  INFO      Campaign intelligence: {'metrics_daily': 'output/metrics_daily.csv', 'intelligence_by_strategy': 'output/intelligence_by_strategy.csv', 'funnel': 'output/funnel_by_status.json'}
+2026-04-14 12:11:42,517  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-14 12:11:42,518  INFO      Engagement for account acc_a
+2026-04-14 12:11:42,521  INFO      Engagement for account acc_b
+2026-04-14 12:11:42,521  INFO      Engagement for account acc_c
+2026-04-14 12:11:47,473  INFO      Web3 Apollo extraction started (target=300, per_page=100, max_pages=250)
+2026-04-14 12:11:48,502  INFO      Apollo page 1: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:12:01,554  INFO      Apollo page 1: bulk_match returned 100 profiles
+2026-04-14 12:12:03,274  INFO      Apollo page 2: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:12:17,395  INFO      Apollo page 2: bulk_match returned 100 profiles
+2026-04-14 12:12:19,105  INFO      Apollo page 3: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:12:32,140  INFO      Apollo page 3: bulk_match returned 100 profiles
+2026-04-14 12:12:33,848  INFO      Apollo page 4: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:12:47,781  INFO      Apollo page 4: bulk_match returned 100 profiles
+2026-04-14 12:12:49,572  INFO      Apollo page 5: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:13:02,632  INFO      Apollo page 5: bulk_match returned 100 profiles
+2026-04-14 12:13:04,307  INFO      Apollo page 6: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:13:16,548  INFO      Apollo page 6: bulk_match returned 100 profiles
+2026-04-14 12:13:18,267  INFO      Apollo page 7: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:13:31,208  INFO      Apollo page 7: bulk_match returned 100 profiles
+2026-04-14 12:13:32,844  INFO      Apollo page 8: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:13:46,403  INFO      Apollo page 8: bulk_match returned 100 profiles
+2026-04-14 12:13:48,092  INFO      Apollo page 9: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:14:02,485  INFO      Apollo page 9: bulk_match returned 100 profiles
+2026-04-14 12:14:04,151  INFO      Apollo page 10: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:14:17,180  INFO      Apollo page 10: bulk_match returned 100 profiles
+2026-04-14 12:14:19,189  INFO      Apollo page 11: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:14:32,496  INFO      Apollo page 11: bulk_match returned 100 profiles
+2026-04-14 12:14:34,249  INFO      Apollo page 12: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:14:46,504  INFO      Apollo page 12: bulk_match returned 100 profiles
+2026-04-14 12:14:48,198  INFO      Apollo page 13: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:15:01,092  INFO      Apollo page 13: bulk_match returned 100 profiles
+2026-04-14 12:15:02,740  INFO      Apollo page 14: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:15:15,607  INFO      Apollo page 14: bulk_match returned 100 profiles
+2026-04-14 12:15:17,459  INFO      Apollo page 15: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:15:30,201  INFO      Apollo page 15: bulk_match returned 100 profiles
+2026-04-14 12:15:31,794  INFO      Apollo page 16: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:15:44,082  INFO      Apollo page 16: bulk_match returned 100 profiles
+2026-04-14 12:15:45,756  INFO      Apollo page 17: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:15:58,100  INFO      Apollo page 17: bulk_match returned 100 profiles
+2026-04-14 12:15:59,890  INFO      Apollo page 18: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:16:12,394  INFO      Apollo page 18: bulk_match returned 100 profiles
+2026-04-14 12:16:14,283  INFO      Apollo page 19: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:16:28,091  INFO      Apollo page 19: bulk_match returned 100 profiles
+2026-04-14 12:16:30,392  INFO      Apollo page 20: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:16:42,729  INFO      Apollo page 20: bulk_match returned 100 profiles
+2026-04-14 12:16:44,419  INFO      Apollo page 21: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:16:56,632  INFO      Apollo page 21: bulk_match returned 100 profiles
+2026-04-14 12:16:58,289  INFO      Apollo page 22: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:17:10,272  INFO      Apollo page 22: bulk_match returned 100 profiles
+2026-04-14 12:17:11,932  INFO      Apollo page 23: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:17:24,895  INFO      Apollo page 23: bulk_match returned 100 profiles
+2026-04-14 12:17:26,653  INFO      Apollo page 24: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:17:39,181  INFO      Apollo page 24: bulk_match returned 100 profiles
+2026-04-14 12:17:40,886  INFO      Apollo page 25: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:17:52,965  INFO      Apollo page 25: bulk_match returned 100 profiles
+2026-04-14 12:17:54,619  INFO      Apollo page 26: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-14 12:17:55,186  ERROR     Apollo error body (truncated): {"error":"You have insufficient credits! \u003ca href='https://app.apollo.io/#/settings/plans/upgrade' aria-onclick='close_alert'\u003eUpgrade your plan\u003c/a\u003e to increase your number of lead credits."}
+2026-04-14 12:17:55,186  ERROR     Apollo POST https://api.apollo.io/api/v1/people/bulk_match failed: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/api/v1/people/bulk_match
+2026-04-14 12:17:55,186  ERROR     Apollo bulk_match failed on page 26: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/api/v1/people/bulk_match
+2026-04-14 12:17:55,211  INFO      Wrote 182 qualified Web3 leads → /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-14 12:17:55,228  INFO      Apollo Web3 extraction finished: /Users/admin/Downloads/leadgen/output/apollo_leads.csv

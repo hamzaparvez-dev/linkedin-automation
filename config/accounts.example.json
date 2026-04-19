@@ -1,0 +1,31 @@
+{
+  "campaign_id": "default-campaign",
+  "accounts": [
+    {
+      "account_id": "acc_a",
+      "linkedin_profile": "PASTE_LINKEDIN_SESSION_COOKIE_OR_li_at_VALUE_FOR_ACCOUNT_A",
+      "user_agent": "Mozilla/5.0 … paste the same browser User-Agent used when exporting li_at for this account …",
+      "schedule_start": "00:00",
+      "schedule_end": "23:59",
+      "primary_strategy": "direct",
+      "delay_range_sec": [30, 180],
+      "steady_daily_limits": { "connect": 20, "dm": 15, "reply": 10 },
+      "weekend_actions": true,
+      "phantombuster_connect_agent_id": "PASTE_NUMERIC_CONNECT_PHANTOM_ID_FOR_A",
+      "phantombuster_dm_agent_id": "PASTE_NUMERIC_DM_PHANTOM_ID_FOR_A"
+    },
+    {
+      "account_id": "acc_c",
+      "linkedin_profile": "PASTE_LINKEDIN_SESSION_COOKIE_OR_li_at_VALUE_FOR_ACCOUNT_C",
+      "user_agent": "Mozilla/5.0 … browser UA for account C (must match the session capture) …",
+      "schedule_start": "00:00",
+      "schedule_end": "23:59",
+      "primary_strategy": "value",
+      "delay_range_sec": [60, 180],
+      "steady_daily_limits": { "connect": 15, "dm": 10, "reply": 6 },
+      "weekend_actions": true,
+      "phantombuster_connect_agent_id": "PASTE_NUMERIC_CONNECT_PHANTOM_ID_FOR_C",
+      "phantombuster_dm_agent_id": "PASTE_NUMERIC_DM_PHANTOM_ID_FOR_C"
+    }
+  ]
+}

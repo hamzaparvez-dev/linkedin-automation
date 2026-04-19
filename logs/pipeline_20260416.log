@@ -1,0 +1,301 @@
+2026-04-16 10:22:51,181  INFO      Web3 Apollo extraction started (target=35, per_page=100, max_pages=250, strict_outreach=False)
+2026-04-16 10:22:52,924  INFO      Apollo page 1: fetched 100 stubs, 100 queued for bulk_match (stub_prefilter=founder_only)
+2026-04-16 10:22:53,925  ERROR     Apollo error body (truncated): {"error":"You have insufficient credits! \u003ca href='https://app.apollo.io/#/settings/plans/upgrade' aria-onclick='close_alert'\u003eUpgrade your plan\u003c/a\u003e to increase your number of lead credits."}
+2026-04-16 10:22:53,927  ERROR     Apollo POST https://api.apollo.io/api/v1/people/bulk_match failed: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/api/v1/people/bulk_match
+2026-04-16 10:22:53,939  ERROR     Apollo bulk_match failed on page 1: 422 Client Error: Unprocessable Entity for url: https://api.apollo.io/api/v1/people/bulk_match
+2026-04-16 10:22:54,002  INFO      Wrote 182 qualified Web3 leads → /Users/admin/Downloads/leadgen/output/apollo_leads.csv (+0 new this run, 182 loaded from existing CSV)
+2026-04-16 10:22:54,017  INFO      Apollo Web3 extraction finished: /Users/admin/Downloads/leadgen/output/apollo_leads.csv
+2026-04-16 10:50:15,158  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 10:50:15,852  INFO      Imported / upserted 165 leads from /Users/admin/Downloads/leadgen/output/leads_lookup_merged.csv (campaign=default-campaign)
+2026-04-16 10:50:16,413  INFO      Assigned 11 qualified leads across accounts
+2026-04-16 10:50:16,422  INFO      Campaign intelligence: {'metrics_daily': 'output/metrics_daily.csv', 'intelligence_by_strategy': 'output/intelligence_by_strategy.csv', 'funnel': 'output/funnel_by_status.json'}
+2026-04-16 10:50:16,425  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 10:50:16,428  INFO      Engagement for account acc_a
+2026-04-16 10:50:16,443  INFO      [dry-run] connect 27d2125dd46afa8c52da6441
+2026-04-16 10:50:58,461  INFO      [dry-run] connect 3d35098d07c21dd54e854e90
+2026-04-16 10:53:50,545  INFO      [dry-run] connect 87f0929e5dace65114d113f7
+2026-04-16 10:55:00,580  INFO      [dry-run] connect dde4da37002d5cfbe5af1776
+2026-04-16 10:55:58,783  INFO      Engagement for account acc_b
+2026-04-16 10:55:58,800  INFO      Connect hold: acc_b — outside_schedule
+2026-04-16 10:55:58,802  INFO      Engagement for account acc_c
+2026-04-16 10:55:58,815  INFO      Connect hold: acc_c — outside_schedule
+2026-04-16 10:55:58,826  INFO      Daily automation finished (engagement dry_run=True, db=data/leadgen.db)
+2026-04-16 20:17:58,289  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 20:17:58,293  INFO      Phantombuster mapping account=acc_a linkedin_profile=primary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 20:17:58,294  INFO      Phantombuster mapping account=acc_b linkedin_profile=secondary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 20:17:58,294  INFO      Phantombuster mapping account=acc_c linkedin_profile=tertiary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 20:17:58,297  INFO      Engagement for account acc_a (dry_run=False, max_leads=2)
+2026-04-16 20:17:58,307  INFO      Connect hold: acc_a — outside_schedule
+2026-04-16 20:17:58,312  INFO      Engagement for account acc_b (dry_run=False, max_leads=2)
+2026-04-16 20:17:58,322  INFO      Connect hold: acc_b — outside_schedule
+2026-04-16 20:17:58,325  INFO      Engagement for account acc_c (dry_run=False, max_leads=2)
+2026-04-16 20:17:58,330  INFO      Connect hold: acc_c — outside_schedule
+2026-04-16 20:18:29,882  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 20:18:29,885  INFO      Phantombuster mapping account=acc_a linkedin_profile=primary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 20:18:29,886  INFO      Phantombuster mapping account=acc_b linkedin_profile=secondary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 20:18:29,886  INFO      Phantombuster mapping account=acc_c linkedin_profile=tertiary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 20:18:29,901  INFO      Engagement for account acc_a (dry_run=False, max_leads=2)
+2026-04-16 20:18:31,865  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 linkedin_url=https://linkedin.com/in/ericwkoehler message=Hi Eric, I see you’re with EWK Consulting. I’m interested in the Web3 space and would love to connect.
+2026-04-16 20:18:34,262  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 377648361710396
+2026-04-16 21:19:00,367  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-16 21:19:00,426  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 ok=False container_id=377648361710396 summary=status=None | {}
+2026-04-16 21:19:00,431  INFO      Phantombuster connect finished=False container=377648361710396 account=acc_a lead=27d2125dd46afa8c52da6441 profile=primary-sdr-session
+2026-04-16 21:21:05,925  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 linkedin_url=https://linkedin.com/in/kathyteo message=Hi Kathy, I admire what Xpointo Media is doing in the Web3 space. I’d love to connect and share insights.
+2026-04-16 21:21:06,836  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 2227433273169813
+2026-04-16 21:24:39,449  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 21:24:39,451  INFO      Phantombuster mapping account=acc_a linkedin_profile=primary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:24:39,451  INFO      Phantombuster mapping account=acc_b linkedin_profile=secondary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:24:39,452  INFO      Phantombuster mapping account=acc_c linkedin_profile=tertiary-sdr-session connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:24:39,452  INFO      Engagement for account acc_a (dry_run=False, max_leads=2)
+2026-04-16 21:24:42,556  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 linkedin_url=https://linkedin.com/in/ericwkoehler message=Hi Eric, I see you’re with EWK Consulting. I’d love to connect and share thoughts on the Web3 space.
+2026-04-16 21:24:42,557  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"message": "Hi Eric, I see you’re with EWK Consulting. I’d love to connect and share thoughts on the Web3 space.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/ericwkoehler"}
+2026-04-16 21:24:42,557  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/ericwkoehler", "numberOfAddsPerLaunch": 1, "message": "Hi Eric, I see you’re with EWK Consulting. I’d love to connect and share thoughts on the Web3 space."}}
+2026-04-16 21:24:44,267  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 3691386842750972
+2026-04-16 21:41:55,555  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 21:41:55,558  INFO      Phantombuster mapping account=acc_a linkedin_profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:41:55,559  INFO      Phantombuster mapping account=acc_b linkedin_profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1 connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:41:55,559  INFO      Phantombuster mapping account=acc_c linkedin_profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:41:55,560  INFO      Engagement for account acc_a (dry_run=False, max_leads=2)
+2026-04-16 21:41:55,563  INFO      Connect hold: acc_a — outside_schedule
+2026-04-16 21:41:55,566  INFO      Engagement for account acc_b (dry_run=False, max_leads=2)
+2026-04-16 21:41:55,568  INFO      Connect hold: acc_b — outside_schedule
+2026-04-16 21:41:55,570  INFO      Engagement for account acc_c (dry_run=False, max_leads=2)
+2026-04-16 21:41:55,573  INFO      Connect hold: acc_c — outside_schedule
+2026-04-16 21:42:25,796  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 21:42:25,798  INFO      Phantombuster mapping account=acc_a linkedin_profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:42:25,798  INFO      Phantombuster mapping account=acc_b linkedin_profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1 connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:42:25,800  INFO      Phantombuster mapping account=acc_c linkedin_profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:42:25,801  INFO      Engagement for account acc_a (dry_run=False, max_leads=2)
+2026-04-16 21:42:27,706  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 linkedin_url=https://linkedin.com/in/ericwkoehler message=Hi Eric, I see you’re with EWK Consulting. I’m interested in the Web3 space and would love to connect.
+2026-04-16 21:42:27,707  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Eric, I see you’re with EWK Consulting. I’m interested in the Web3 space and would love to connect.", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/ericwkoehler", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-16 21:42:27,707  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/ericwkoehler", "numberOfAddsPerLaunch": 1, "message": "Hi Eric, I see you’re with EWK Consulting. I’m interested in the Web3 space and would love to connect.", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-16 21:42:29,955  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 2820313441643320
+2026-04-16 21:59:35,087  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 21:59:35,093  ERROR     Engagement aborted: accounts.json: account 'acc_b' must set phantombuster_connect_agent_id (numeric id from https://phantombuster.com/.../phantoms/<ID>/). Multi-account: one connect phantom per LinkedIn user — do not rely on env fallback for all accounts.
+2026-04-16 21:59:53,925  INFO      Loaded 3 account(s) for campaign default-campaign
+2026-04-16 21:59:53,931  INFO      Phantombuster mapping account=acc_a linkedin_profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob connect_agent=2560884398803024 dm_agent=7847457549195306
+2026-04-16 21:59:53,949  INFO      Engagement for account acc_a (dry_run=False, max_leads=2)
+2026-04-16 22:00:01,725  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 linkedin_url=https://linkedin.com/in/ericwkoehler message=Hi Eric, I see you're at EWK Consulting. I'm interested in the Web3 space and would love to connect.
+2026-04-16 22:00:01,730  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Eric, I see you're at EWK Consulting. I'm interested in the Web3 space and would love to connect.", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/ericwkoehler", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-16 22:00:01,736  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/ericwkoehler", "numberOfAddsPerLaunch": 1, "message": "Hi Eric, I see you're at EWK Consulting. I'm interested in the Web3 space and would love to connect.", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-16 22:00:07,340  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 730499313024485
+2026-04-16 22:21:28,159  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-16 22:21:28,183  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 ok=False container_id=2227433273169813 summary=status=None | {}
+2026-04-16 22:21:28,185  INFO      Phantombuster connect finished=False container=2227433273169813 account=acc_a lead=3d35098d07c21dd54e854e90 profile=primary-sdr-session
+2026-04-16 22:22:04,279  INFO      Engagement for account acc_b (dry_run=False, max_leads=2)
+2026-04-16 22:22:06,823  INFO      [phantom_start] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=eb0b5adcee820f830e5f6112 linkedin_url=https://linkedin.com/in/barshapanda message=Hi Barsha, I came across Dark Street and found your work in Web3 really interesting. I'd love to connect.
+2026-04-16 22:22:07,775  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 3612236093660025
+2026-04-16 22:24:49,944  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-16 22:24:49,981  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 ok=False container_id=3691386842750972 summary=status=None | {}
+2026-04-16 22:24:49,981  INFO      Phantombuster connect finished=False container=3691386842750972 account=acc_a lead=27d2125dd46afa8c52da6441 profile=primary-sdr-session
+2026-04-16 22:26:29,080  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 linkedin_url=https://linkedin.com/in/kathyteo message=Hi Kathy, I admire what Xpointo Media is doing in the Web3 space. Would love to connect and share insights.
+2026-04-16 22:26:29,084  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"message": "Hi Kathy, I admire what Xpointo Media is doing in the Web3 space. Would love to connect and share insights.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/kathyteo"}
+2026-04-16 22:26:29,087  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/kathyteo", "numberOfAddsPerLaunch": 1, "message": "Hi Kathy, I admire what Xpointo Media is doing in the Web3 space. Would love to connect and share insights."}}
+2026-04-16 22:26:29,864  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 8668128454595848
+2026-04-17 00:27:19,332  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 00:27:19,341  INFO      [phantom_end] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=eb0b5adcee820f830e5f6112 ok=False container_id=3612236093660025 summary=status=None | {}
+2026-04-17 00:27:19,342  INFO      Phantombuster connect finished=False container=3612236093660025 account=acc_b lead=eb0b5adcee820f830e5f6112 profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1
+2026-04-17 00:27:19,562  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 00:27:19,911  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 ok=False container_id=2820313441643320 summary=status=None | {}
+2026-04-17 00:27:19,913  INFO      Phantombuster connect finished=False container=2820313441643320 account=acc_a lead=27d2125dd46afa8c52da6441 profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob
+2026-04-17 00:27:23,015  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 00:27:23,043  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=27d2125dd46afa8c52da6441 ok=False container_id=730499313024485 summary=status=None | {}
+2026-04-17 00:27:23,045  INFO      Phantombuster connect finished=False container=730499313024485 account=acc_a lead=27d2125dd46afa8c52da6441 profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob
+2026-04-17 05:24:55,703  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 05:24:56,172  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 ok=False container_id=8668128454595848 summary=status=None | {}
+2026-04-17 05:24:56,173  INFO      Phantombuster connect finished=False container=8668128454595848 account=acc_a lead=3d35098d07c21dd54e854e90 profile=primary-sdr-session
+2026-04-17 05:26:19,171  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 linkedin_url=https://linkedin.com/in/kathyteo message=Hi Kathy, I’m impressed by what Xpointo Media is doing in the Web3 space. I'd love to connect!
+2026-04-17 05:26:19,176  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Kathy, I’m impressed by what Xpointo Media is doing in the Web3 space. I'd love to connect!", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/kathyteo", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-17 05:26:19,177  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/kathyteo", "numberOfAddsPerLaunch": 1, "message": "Hi Kathy, I’m impressed by what Xpointo Media is doing in the Web3 space. I'd love to connect!", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-17 05:26:23,070  INFO      [phantom_start] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=d93a7cacb510054488bb8823 linkedin_url=https://linkedin.com/in/bhaskar-rao-306 message=Hi Bhaskar, I’m impressed by Digital SEA's work in Web3. I'd love to connect and share insights.
+2026-04-17 05:26:29,589  INFO      [phantom_start] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 linkedin_url=https://linkedin.com/in/kathyteo message=Hi Kathy, I’m impressed by Xpointo Media's work in Web3. I'd love to connect and share insights.
+2026-04-17 05:26:29,592  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Kathy, I’m impressed by Xpointo Media's work in Web3. I'd love to connect and share insights.", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/kathyteo", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-17 05:26:29,592  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/kathyteo", "numberOfAddsPerLaunch": 1, "message": "Hi Kathy, I’m impressed by Xpointo Media's work in Web3. I'd love to connect and share insights.", "sessionCookie": "AQEDAQSH6jgEkfbs…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-17 05:26:50,013  INFO      Engagement for account acc_b (dry_run=False, max_leads=2)
+2026-04-17 05:26:52,462  INFO      [phantom_start] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=eb0b5adcee820f830e5f6112 linkedin_url=https://linkedin.com/in/barshapanda message=Hi Barsha, I came across Dark Street and find your work in Web3 really interesting. Let's connect!
+2026-04-17 05:26:52,464  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"message": "Hi Barsha, I came across Dark Street and find your work in Web3 really interesting. Let's connect!", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/barshapanda"}
+2026-04-17 05:26:52,464  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/barshapanda", "numberOfAddsPerLaunch": 1, "message": "Hi Barsha, I came across Dark Street and find your work in Web3 really interesting. Let's connect!"}}
+2026-04-17 05:28:19,345  WARNING   [Phantombuster] launch attempt 1/3 failed: HTTPSConnectionPool(host='api.phantombuster.com', port=443): Read timed out. (read timeout=120)
+2026-04-17 05:28:23,134  WARNING   [Phantombuster] launch attempt 1/3 failed: HTTPSConnectionPool(host='api.phantombuster.com', port=443): Read timed out. (read timeout=120)
+2026-04-17 05:28:23,502  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 6561184509196689
+2026-04-17 05:28:26,330  WARNING   [Phantombuster] launch attempt 2/3 failed: 429 Client Error: Too Many Requests for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 05:28:29,679  WARNING   [Phantombuster] launch attempt 1/3 failed: HTTPSConnectionPool(host='api.phantombuster.com', port=443): Read timed out. (read timeout=120)
+2026-04-17 05:28:30,682  WARNING   [Phantombuster] launch attempt 3/3 failed: 429 Client Error: Too Many Requests for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 05:28:33,176  WARNING   [Phantombuster] launch attempt 2/3 failed: 429 Client Error: Too Many Requests for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 05:28:37,970  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 6092670645511479
+2026-04-17 05:28:38,686  INFO      [phantom_end] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=d93a7cacb510054488bb8823 ok=False container_id=(none) summary=exception:HTTPError:429 Client Error: Too Many Requests for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 05:28:38,689  ERROR     Phantombuster connect failed account=acc_b lead=d93a7cacb510054488bb8823 profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 344, in _process_connects
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 170, in run_agent
+    li_url = lead.get("linkedin_url", "")
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 55, in launch_agent
+    json.dumps(log_payload, ensure_ascii=False),
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 47, in launch_agent
+    url = f"{PHANTOMBUSTER_BASE_URL}/agents/launch"
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 429 Client Error: Too Many Requests for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 05:28:52,492  WARNING   [Phantombuster] launch attempt 1/3 failed: HTTPSConnectionPool(host='api.phantombuster.com', port=443): Read timed out. (read timeout=120)
+2026-04-17 05:28:56,403  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 7240358506104176
+2026-04-17 05:31:38,817  INFO      Engagement for account acc_c (dry_run=False, max_leads=2)
+2026-04-17 05:31:42,466  INFO      [phantom_start] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c98297a8d98d17fa99bbb267 linkedin_url=https://linkedin.com/in/markpith message=Hi Mark, I noticed Nextvoyage is doing interesting work in maritime software. I'd love to connect and share insights.
+2026-04-17 05:31:43,314  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 1146536708515076
+2026-04-17 06:28:44,299  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 06:28:44,330  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 ok=False container_id=6561184509196689 summary=status=None | {}
+2026-04-17 06:28:44,335  INFO      Phantombuster connect finished=False container=6561184509196689 account=acc_a lead=3d35098d07c21dd54e854e90 profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob
+2026-04-17 06:28:45,573  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 06:28:45,587  INFO      [phantom_end] action=connect account_id=acc_a agent_id=2560884398803024 lead_id=3d35098d07c21dd54e854e90 ok=False container_id=6092670645511479 summary=status=None | {}
+2026-04-17 06:28:45,591  INFO      Phantombuster connect finished=False container=6092670645511479 account=acc_a lead=3d35098d07c21dd54e854e90 profile=AQEDAQSH6jgEkfbsAAABnXym4kwAAAGdoLNmTFYAofZ2IjZVrjrE6HDmwQlBRAdzUjD88oPDcOUNpZjjoST9szY4x7hr2Re_p_M1C9X8JPYHRAbiyaXEUtahsS7V65Vcub-sBk01WwCKobAUNsrKSvob
+2026-04-17 06:29:14,576  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 06:29:14,595  INFO      [phantom_end] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=eb0b5adcee820f830e5f6112 ok=False container_id=7240358506104176 summary=status=None | {}
+2026-04-17 06:29:14,595  INFO      Phantombuster connect finished=False container=7240358506104176 account=acc_b lead=eb0b5adcee820f830e5f6112 profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1
+2026-04-17 06:31:37,512  INFO      [phantom_start] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=d93a7cacb510054488bb8823 linkedin_url=https://linkedin.com/in/bhaskar-rao-306 message=Hi Bhaskar, I’m interested in Digital SEA’s work in Web3. Let’s connect and share thoughts on the space.
+2026-04-17 06:31:37,516  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"message": "Hi Bhaskar, I’m interested in Digital SEA’s work in Web3. Let’s connect and share thoughts on the space.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/bhaskar-rao-306"}
+2026-04-17 06:31:37,516  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/bhaskar-rao-306", "numberOfAddsPerLaunch": 1, "message": "Hi Bhaskar, I’m interested in Digital SEA’s work in Web3. Let’s connect and share thoughts on the space."}}
+2026-04-17 06:31:38,398  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 3078772668481536
+2026-04-17 06:31:45,641  INFO      Engagement for account acc_b (dry_run=False, max_leads=2)
+2026-04-17 06:31:47,186  INFO      [phantom_start] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=eb0b5adcee820f830e5f6112 linkedin_url=https://linkedin.com/in/barshapanda message=Hi Barsha, I came across Dark Street and found your work in Web3 really interesting. Let's connect!
+2026-04-17 06:31:47,187  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Barsha, I came across Dark Street and found your work in Web3 really interesting. Let's connect!", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/barshapanda", "sessionCookie": "AQEDASiAua0EK1FE…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-17 06:31:47,189  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/barshapanda", "numberOfAddsPerLaunch": 1, "message": "Hi Barsha, I came across Dark Street and found your work in Web3 really interesting. Let's connect!", "sessionCookie": "AQEDASiAua0EK1FE…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-17 06:31:48,027  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 8614833455886927
+2026-04-17 06:31:49,958  WARNING   [Phantombuster] Timed out after 60 minutes.
+2026-04-17 06:31:49,997  INFO      [phantom_end] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c98297a8d98d17fa99bbb267 ok=False container_id=1146536708515076 summary=status=None | {}
+2026-04-17 06:31:50,006  INFO      Phantombuster connect finished=False container=1146536708515076 account=acc_c lead=c98297a8d98d17fa99bbb267 profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss
+2026-04-17 06:34:07,639  INFO      [phantom_start] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c32bd6f0e708337228a79eb0 linkedin_url=https://linkedin.com/in/prakashsomo message=Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. Would love to connect and share insights.
+2026-04-17 06:34:08,488  INFO      [Phantombuster] Agent 2560884398803024 launched. Container: 3891467918900199
+2026-04-17 06:44:45,868  INFO      [phantom_end] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c32bd6f0e708337228a79eb0 ok=False container_id=(none) summary=exception:HTTPError:404 Client Error: Not Found for url: https://api.phantombuster.com/api/v2/containers/fetch-result-object?id=3891467918900199
+2026-04-17 06:44:45,883  ERROR     Phantombuster connect failed account=acc_c lead=c32bd6f0e708337228a79eb0 profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 344, in _process_connects
+    logger.warning("Skipping lead %s: connect validation %s", lead_id, reason)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 171, in run_agent
+    resp.raise_for_status()
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 80, in wait_for_completion
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://api.phantombuster.com/api/v2/containers/fetch-result-object?id=3891467918900199
+2026-04-17 06:44:46,614  INFO      [phantom_end] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=d93a7cacb510054488bb8823 ok=False container_id=(none) summary=exception:HTTPError:404 Client Error: Not Found for url: https://api.phantombuster.com/api/v2/containers/fetch-result-object?id=3078772668481536
+2026-04-17 06:44:46,625  ERROR     Phantombuster connect failed account=acc_b lead=d93a7cacb510054488bb8823 profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 338, in _process_connects
+    ok, reason = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 183, in run_agent
+    # ── High-level enrich function ─────────────────────────────────────────────
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 92, in wait_for_completion
+    if bonus_argument is not None:
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://api.phantombuster.com/api/v2/containers/fetch-result-object?id=3078772668481536
+2026-04-17 06:44:57,472  INFO      [phantom_end] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=eb0b5adcee820f830e5f6112 ok=False container_id=(none) summary=exception:HTTPError:404 Client Error: Not Found for url: https://api.phantombuster.com/api/v2/containers/fetch-result-object?id=8614833455886927
+2026-04-17 06:44:57,480  ERROR     Phantombuster connect failed account=acc_b lead=eb0b5adcee820f830e5f6112 profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 342, in _process_connects
+    ok, _ = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 187, in run_agent
+    - connection_count
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 96, in wait_for_completion
+    logger.info(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://api.phantombuster.com/api/v2/containers/fetch-result-object?id=8614833455886927
+2026-04-17 06:46:45,196  INFO      [phantom_start] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=d93a7cacb510054488bb8823 linkedin_url=https://linkedin.com/in/bhaskar-rao-306 message=Hi Bhaskar, I find Digital SEA's work in Web3 fascinating. I'd love to connect and learn more about your journey.
+2026-04-17 06:46:45,222  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Bhaskar, I find Digital SEA's work in Web3 fascinating. I'd love to connect and learn more about your journey.", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/bhaskar-rao-306", "sessionCookie": "AQEDASiAua0EK1FE…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-17 06:46:45,231  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/bhaskar-rao-306", "numberOfAddsPerLaunch": 1, "message": "Hi Bhaskar, I find Digital SEA's work in Web3 fascinating. I'd love to connect and learn more about your journey.", "sessionCookie": "AQEDASiAua0EK1FE…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-17 06:46:45,525  WARNING   [Phantombuster] launch attempt 1/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:46:47,763  WARNING   [Phantombuster] launch attempt 2/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:46:52,116  WARNING   [Phantombuster] launch attempt 3/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:00,122  INFO      [phantom_end] action=connect account_id=acc_b agent_id=2560884398803024 lead_id=d93a7cacb510054488bb8823 ok=False container_id=(none) summary=exception:HTTPError:400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:00,122  ERROR     Phantombuster connect failed account=acc_b lead=d93a7cacb510054488bb8823 profile=AQEDASiAua0EK1FEAAABnYv9VJYAAAGdsAnYllYAEMkqoMYmDk55zbrM6x_C8pLGj_hU7_XKVjPij_dRNdm1nt59wVbqqyLO5fF7hLhZTmfLMr32taZj8gwrC7V2HnW5fKZKVpCZLng5Op1HM9UsGz-1
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 342, in _process_connects
+    ok, _ = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 186, in run_agent
+    Takes leads with linkedin_url, enriches them with:
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 71, in launch_agent
+    ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 63, in launch_agent
+    if not ok_b:
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:34,957  INFO      Engagement for account acc_c (dry_run=False, max_leads=2)
+2026-04-17 06:47:36,124  INFO      [phantom_start] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c98297a8d98d17fa99bbb267 linkedin_url=https://linkedin.com/in/markpith message=Hi Mark, I’m interested in Nextvoyage and its role in maritime software. Let’s connect!
+2026-04-17 06:47:36,128  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"message": "Hi Mark, I’m interested in Nextvoyage and its role in maritime software. Let’s connect!", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/markpith"}
+2026-04-17 06:47:36,129  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/markpith", "numberOfAddsPerLaunch": 1, "message": "Hi Mark, I’m interested in Nextvoyage and its role in maritime software. Let’s connect!"}}
+2026-04-17 06:47:36,391  WARNING   [Phantombuster] launch attempt 1/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:39,134  WARNING   [Phantombuster] launch attempt 2/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:43,397  WARNING   [Phantombuster] launch attempt 3/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:51,401  INFO      [phantom_end] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c98297a8d98d17fa99bbb267 ok=False container_id=(none) summary=exception:HTTPError:400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:47:51,402  ERROR     Phantombuster connect failed account=acc_c lead=c98297a8d98d17fa99bbb267 profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 338, in _process_connects
+    ok, reason = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 182, in run_agent
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 67, in launch_agent
+    argument.get("profileUrls") is not None or argument.get("profileUrl") is not None
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 59, in launch_agent
+    if bonus_argument is not None:
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:48:39,248  INFO      Engagement for account acc_c (dry_run=False, max_leads=2)
+2026-04-17 06:48:41,245  INFO      [phantom_start] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c98297a8d98d17fa99bbb267 linkedin_url=https://linkedin.com/in/markpith message=Hi Mark, I’m interested in Nextvoyage and the maritime software space. Let’s connect and share insights!
+2026-04-17 06:48:41,245  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Mark, I’m interested in Nextvoyage and the maritime software space. Let’s connect and share insights!", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/markpith", "sessionCookie": "AQEDASXJ2CgEC3pU…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-17 06:48:41,245  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/markpith", "numberOfAddsPerLaunch": 1, "message": "Hi Mark, I’m interested in Nextvoyage and the maritime software space. Let’s connect and share insights!", "sessionCookie": "AQEDASXJ2CgEC3pU…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-17 06:48:41,499  WARNING   [Phantombuster] launch attempt 1/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:48:43,800  WARNING   [Phantombuster] launch attempt 2/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:48:48,082  WARNING   [Phantombuster] launch attempt 3/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:48:56,089  INFO      [phantom_end] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c98297a8d98d17fa99bbb267 ok=False container_id=(none) summary=exception:HTTPError:400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:48:56,090  ERROR     Phantombuster connect failed account=acc_c lead=c98297a8d98d17fa99bbb267 profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 342, in _process_connects
+    ok, _ = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 186, in run_agent
+    Takes leads with linkedin_url, enriches them with:
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 71, in launch_agent
+    ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 63, in launch_agent
+    if not ok_b:
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:49:24,871  INFO      [phantom_start] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c32bd6f0e708337228a79eb0 linkedin_url=https://linkedin.com/in/prakashsomo message=Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights.
+2026-04-17 06:49:24,872  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"message": "Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights.", "numberOfAddsPerLaunch": 1, "profileUrl": "https://www.linkedin.com/in/prakashsomo"}
+2026-04-17 06:49:24,872  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/prakashsomo", "numberOfAddsPerLaunch": 1, "message": "Hi Prakash, I admire what Enjinstarter is doing in the Web3 space. I'd love to connect and share insights."}}
+2026-04-17 06:49:25,109  WARNING   [Phantombuster] launch attempt 1/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:49:27,334  WARNING   [Phantombuster] launch attempt 2/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:49:31,585  WARNING   [Phantombuster] launch attempt 3/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:49:39,589  INFO      [phantom_end] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c32bd6f0e708337228a79eb0 ok=False container_id=(none) summary=exception:HTTPError:400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:49:39,590  ERROR     Phantombuster connect failed account=acc_c lead=c32bd6f0e708337228a79eb0 profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 338, in _process_connects
+    ok, reason = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 182, in run_agent
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 67, in launch_agent
+    argument.get("profileUrls") is not None or argument.get("profileUrl") is not None
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 59, in launch_agent
+    if bonus_argument is not None:
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:51:11,104  INFO      [phantom_start] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c32bd6f0e708337228a79eb0 linkedin_url=https://linkedin.com/in/prakashsomo message=Hi Prakash, I see you're with Enjinstarter. I'm exploring the Web3 space and would love to connect.
+2026-04-17 06:51:11,108  INFO      [Phantombuster] engagement argument JSON (agent_id=2560884398803024): {"dwellTime": true, "emailChooser": "none", "inputType": "profileUrl", "message": "Hi Prakash, I see you're with Enjinstarter. I'm exploring the Web3 space and would love to connect.", "numberOfAddsPerLaunch": 1, "onlySecondCircle": false, "profileUrl": "https://www.linkedin.com/in/prakashsomo", "sessionCookie": "AQEDASXJ2CgEC3pU…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+2026-04-17 06:51:11,109  INFO      [Phantombuster] launch API payload JSON: {"id": "2560884398803024", "argument": {"profileUrl": "https://www.linkedin.com/in/prakashsomo", "numberOfAddsPerLaunch": 1, "message": "Hi Prakash, I see you're with Enjinstarter. I'm exploring the Web3 space and would love to connect.", "sessionCookie": "AQEDASXJ2CgEC3pU…(152 chars)", "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "inputType": "profileUrl", "onlySecondCircle": false, "dwellTime": true, "emailChooser": "none"}}
+2026-04-17 06:51:11,346  WARNING   [Phantombuster] launch attempt 1/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:51:13,586  WARNING   [Phantombuster] launch attempt 2/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:51:17,975  WARNING   [Phantombuster] launch attempt 3/3 failed: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:51:25,979  INFO      [phantom_end] action=connect account_id=acc_c agent_id=2560884398803024 lead_id=c32bd6f0e708337228a79eb0 ok=False container_id=(none) summary=exception:HTTPError:400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
+2026-04-17 06:51:25,980  ERROR     Phantombuster connect failed account=acc_c lead=c32bd6f0e708337228a79eb0 profile=AQEDASXJ2CgEC3pUAAABnYv-OnIAAAGdsAq-clYAPNzks1fUGGq_Em4tqun44LkjIXQsl-0vkVcGuZ1NjPKs62NXK_onLz-XonvJ_LlR59IxnNzBzaMpkAxEm0jAzrFeVd4pPPB9Vm6FxwDigiZXB2Ss
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/leadgen/core/engagement_runner.py", line 342, in _process_connects
+    ok, _ = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 186, in run_agent
+    Takes leads with linkedin_url, enriches them with:
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 71, in launch_agent
+    ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
+  File "/Users/admin/Downloads/leadgen/integrations/phantombuster_client.py", line 63, in launch_agent
+    if not ok_b:
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://api.phantombuster.com/api/v2/agents/launch
