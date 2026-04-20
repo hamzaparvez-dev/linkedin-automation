@@ -17,6 +17,19 @@ export async function apiGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** POST multipart (e.g. CSV upload). Do not set Content-Type — browser sets boundary. */
+export async function apiPostFormData<T>(path: string, formData: FormData): Promise<T> {
+  const url = `${apiBase}${path.startsWith('/') ? path : `/${path}`}`
+  const h: Record<string, string> = {}
+  if (token) h.Authorization = `Bearer ${token}`
+  const res = await fetch(url, { method: 'POST', headers: h, body: formData })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 200)}`)
+  }
+  return res.json() as Promise<T>
+}
+
 function downloadHeaders(): HeadersInit {
   const h: Record<string, string> = { Accept: 'text/csv,*/*' }
   if (token) h.Authorization = `Bearer ${token}`

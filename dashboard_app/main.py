@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -203,6 +203,40 @@ def create_app() -> FastAPI:
             return d
         finally:
             conn.close()
+
+    @app.post("/api/leads/import")
+    async def import_leads_csv(
+        _: None = OptionalAuth,
+        file: UploadFile = File(...),
+        campaign_id: str | None = Form(None),
+    ) -> dict[str, Any]:
+        """Upload Apify-style CSV; insert NEW leads (score 0). Duplicate lead_id rows are skipped."""
+        from dashboard_app.apify_csv_import import import_apify_csv
+
+        name = (file.filename or "").lower()
+        ct = (file.content_type or "").lower()
+        if not name.endswith(".csv") and "csv" not in ct and "excel" not in ct:
+            raise HTTPException(status_code=400, detail="expected_csv_file")
+
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail="empty_file")
+
+        cid = (campaign_id or "").strip()
+        if not cid:
+            try:
+                doc = load_accounts_document(ACCOUNT_CONFIG_PATH)
+                cid = doc.campaign_id
+            except (FileNotFoundError, ValueError):
+                cid = "default-campaign"
+
+        init_schema()
+        conn = get_connection()
+        try:
+            imported, skipped, errors = import_apify_csv(conn, raw, cid)
+        finally:
+            conn.close()
+        return {"imported": imported, "skipped": skipped, "errors": errors}
 
     @app.get("/api/actions")
     def list_actions(

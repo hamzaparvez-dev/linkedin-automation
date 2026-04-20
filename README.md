@@ -517,6 +517,8 @@ Open `http://127.0.0.1:8080/` — the app uses **hash routing** (`/#/`, `/#/lead
 
 **Auth:** If you set `DASHBOARD_API_TOKEN` in `.env`, every `/api/*` request must send `Authorization: Bearer <token>`. For the Vite dev server, set `VITE_DASHBOARD_TOKEN` in `frontend/.env` (see `frontend/.env.example`).
 
+**Apify CSV import:** On the **Leads (SQLite)** page, use **Choose CSV → Upload** to call `POST /api/leads/import`. Rows are inserted as `NEW` with score `0`; duplicate `lead_id` values are skipped. Apify actors use different CSV headers (`url` vs `profileUrl` vs `linkedin_url`, etc.). If imports look empty or wrong, open your CSV header row and extend the alias map in [`dashboard_app/apify_csv_import.py`](dashboard_app/apify_csv_import.py) (`_ALIASES`).
+
 **Data note:** Connect/DM counts and Phantombuster outcomes come from **`action_log`** and **`metrics_daily`**, populated when you run `python main.py --engagement-only` (use `--dry-run` to log planned connects without launching agents).
 
 ### Production-ready lead records (LinkedIn, email, assignment)

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
-import { apiGet } from '../api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { apiGet, apiPostFormData } from '../api'
 import type { LeadRow, Paginated } from '../types'
+
+type ImportResult = { imported: number; skipped: number; errors: string[] }
 
 export function Leads() {
   const [page, setPage] = useState(1)
@@ -9,6 +11,10 @@ export function Leads() {
   const [data, setData] = useState<Paginated<LeadRow> | null>(null)
   const [detail, setDetail] = useState<LeadRow | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importOk, setImportOk] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const limit = 40
 
   const load = useCallback(async () => {
@@ -42,10 +48,78 @@ export function Leads() {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1
 
+  const onCsvChosen = (f: File | null) => {
+    setImportOk(null)
+    if (!f) {
+      setCsvFile(null)
+      return
+    }
+    if (!f.name.toLowerCase().endsWith('.csv')) {
+      setErr('Please choose a .csv file.')
+      setCsvFile(null)
+      return
+    }
+    setErr(null)
+    setCsvFile(f)
+  }
+
+  const doCsvUpload = async () => {
+    if (!csvFile) return
+    setImporting(true)
+    setImportOk(null)
+    setErr(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', csvFile)
+      const res = await apiPostFormData<ImportResult>('/api/leads/import', fd)
+      let msg = `Imported ${res.imported} lead(s). Skipped: ${res.skipped}.`
+      if (res.errors?.length) {
+        msg += ` (${res.errors.slice(0, 3).join(' · ')})`
+      }
+      setImportOk(msg)
+      setCsvFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      await load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="stack">
       <div className="panel">
         <h2>Leads (SQLite)</h2>
+        <div className="csv-import-zone">
+          <p className="muted" style={{ marginTop: 0 }}>
+            <strong>Apify CSV import</strong> — upload a CSV (e.g. LinkedIn profile export). Rows need a
+            recognizable LinkedIn URL column (<code>url</code>, <code>linkedin_url</code>, etc.). New rows
+            are inserted as <code>NEW</code> with score 0; duplicate <code>lead_id</code> values are skipped.
+          </p>
+          <div className="row">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: 'none' }}
+              onChange={(e) => onCsvChosen(e.target.files?.[0] ?? null)}
+            />
+            <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+              Choose CSV
+            </button>
+            <span className="muted small">{csvFile ? csvFile.name : 'No file selected'}</span>
+            <button
+              type="button"
+              className="btn"
+              disabled={!csvFile || importing}
+              onClick={() => void doCsvUpload()}
+            >
+              {importing ? 'Uploading…' : 'Upload'}
+            </button>
+          </div>
+          {importOk && <p className="success-text">{importOk}</p>}
+        </div>
         <p className="muted">
           <strong>Empty LinkedIn / email?</strong> Apollo <code>api_search</code> alone is incomplete.
           Use <code>APOLLO_EXTRACT_BULK_MATCH=true</code> (default) when scraping, run the pipeline{' '}

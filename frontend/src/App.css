@@ -271,3 +271,24 @@ h2 {
 h3 {
   margin: 0;
 }
+
+.csv-import-zone {
+  border: 1px dashed #4b5563;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  background: #111827;
+}
+
+.csv-import-zone .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.success-text {
+  color: #4ade80;
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+}

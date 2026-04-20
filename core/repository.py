@@ -130,6 +130,74 @@ def upsert_lead_new(
     return lead_id
 
 
+def insert_lead_csv_import(
+    conn: sqlite3.Connection,
+    *,
+    lead_id: str,
+    linkedin_url: str,
+    campaign_id: str,
+    apollo_person_id: str = "",
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    full_name: Optional[str] = None,
+    company_name: Optional[str] = None,
+    title: Optional[str] = None,
+    industry: Optional[str] = None,
+    location: Optional[str] = None,
+    years_experience: int = 0,
+) -> bool:
+    """
+    Insert a single NEW lead from CSV/Apify import. Does not overwrite existing rows.
+    Returns True if a row was inserted, False if lead_id already exists (ON CONFLICT DO NOTHING).
+    """
+    li = normalize_linkedin_url(linkedin_url)
+    if not li:
+        return False
+    now = utc_now_iso()
+    ap = (apollo_person_id or "").strip() or None
+    cur = conn.execute(
+        """
+        INSERT INTO leads (
+            lead_id, apollo_person_id, linkedin_url, email, first_name, last_name, full_name,
+            company_name, title, industry, location, years_experience,
+            connection_count, active_last_30_days, activity_level,
+            score, score_breakdown_json, status, account_id, campaign_id,
+            message_history_json, created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(lead_id) DO NOTHING
+        """,
+        (
+            lead_id,
+            ap,
+            li,
+            email,
+            first_name,
+            last_name,
+            full_name,
+            company_name,
+            title,
+            industry,
+            location,
+            int(years_experience or 0),
+            None,
+            None,
+            None,
+            0,
+            json.dumps({}),
+            "NEW",
+            None,
+            campaign_id,
+            json.dumps([]),
+            now,
+            now,
+        ),
+    )
+    inserted = getattr(cur, "rowcount", 0) == 1
+    conn.commit()
+    return inserted
+
+
 def _int_or_none(v: Any) -> Optional[int]:
     if v is None or v == "":
         return None
