@@ -50,7 +50,7 @@ from core.strategy_engine import (
     compose_from_template,
     pick_strategy,
 )
-from integrations.phantombuster_client import PhantombusterClient
+from integrations.phantombuster_client import PhantombusterClient, format_phantom_api_error
 
 logger = logging.getLogger(__name__)
 
@@ -86,21 +86,6 @@ def _connect_agent_id(account: AccountConfig) -> str:
 
 def _dm_agent_id(account: AccountConfig) -> str:
     return (account.phantombuster_dm_agent_id or PHANTOMBUSTER_DM_AGENT_ID or "").strip()
-
-
-def _shared_phantom_agent_ids(accounts: list[AccountConfig], *, kind: str) -> frozenset[str]:
-    """Non-empty numeric agent ids used by 2+ accounts (same phantom slot shared across identities)."""
-    counts: dict[str, int] = {}
-    for a in accounts:
-        if kind == "connect":
-            rid = (a.phantombuster_connect_agent_id or PHANTOMBUSTER_CONNECT_AGENT_ID or "").strip()
-        elif kind == "dm":
-            rid = (a.phantombuster_dm_agent_id or PHANTOMBUSTER_DM_AGENT_ID or "").strip()
-        else:
-            raise ValueError("kind must be connect or dm")
-        if rid.isdigit():
-            counts[rid] = counts.get(rid, 0) + 1
-    return frozenset(aid for aid, n in counts.items() if n >= 2)
 
 
 def _resolve_engagement_user_agent(conn, account: AccountConfig) -> str:
@@ -169,6 +154,13 @@ def _phantom_log(pb_summary: str, ores: OutreachResult) -> str:
     if pb_summary:
         return (pb_summary + " | " + part)[:4000]
     return part[:4000]
+
+
+def _pb_error_detail_suffix(phantom_summary: str, *, max_len: int = 1500) -> str:
+    s = (phantom_summary or "").strip()
+    if not s:
+        return ""
+    return (s[:max_len] + "|") if len(s) > max_len else (s + "|")
 
 
 def _maybe_auto_pause_account_on_pb_auth(
@@ -243,12 +235,11 @@ def _log_phantom_after(
 
 def _require_distinct_phantom_ids_per_account(accounts: list[AccountConfig]) -> tuple[bool, str]:
     """
-    Multi-account: each row must declare numeric connect + DM phantom ids (env fallback allowed).
-    Duplicate ids across accounts are allowed when identities share a Phantombuster slot; a pre-launch
-    busy check then serializes launches for those shared ids.
+    Each account row must declare non-empty connect + DM Phantombuster agent ids (per LinkedIn identity).
+    Env fallbacks (PHANTOMBUSTER_CONNECT_AGENT_ID / PHANTOMBUSTER_DM_AGENT_ID) apply when a field is blank.
+    Non-numeric values (e.g. UNIQUE_A_CONNECT_ID placeholders) are allowed but log a warning — replace with
+    the numeric id from the phantom dashboard URL before production launches.
     """
-    if len(accounts) < 2:
-        return True, ""
     for a in accounts:
         ca = (a.phantombuster_connect_agent_id or PHANTOMBUSTER_CONNECT_AGENT_ID or "").strip()
         da = (a.phantombuster_dm_agent_id or PHANTOMBUSTER_DM_AGENT_ID or "").strip()
@@ -256,23 +247,27 @@ def _require_distinct_phantom_ids_per_account(accounts: list[AccountConfig]) -> 
             return (
                 False,
                 f"accounts.json: account {a.account_id!r} must set phantombuster_connect_agent_id "
-                f"(or set PHANTOMBUSTER_CONNECT_AGENT_ID when a single connect phantom is shared).",
+                f"(or set PHANTOMBUSTER_CONNECT_AGENT_ID as fallback).",
             )
         if not ca.isdigit():
-            return (
-                False,
-                f"accounts.json: account {a.account_id!r} phantombuster_connect_agent_id must be numeric (phantom id).",
+            logger.warning(
+                "account %s: phantombuster_connect_agent_id is not numeric (%r) — paste the phantom id from "
+                "Phantombuster before production",
+                a.account_id,
+                ca[:80],
             )
         if not da:
             return (
                 False,
                 f"accounts.json: account {a.account_id!r} must set phantombuster_dm_agent_id "
-                f"(or set PHANTOMBUSTER_DM_AGENT_ID when shared).",
+                f"(or set PHANTOMBUSTER_DM_AGENT_ID as fallback).",
             )
         if not da.isdigit():
-            return (
-                False,
-                f"accounts.json: account {a.account_id!r} phantombuster_dm_agent_id must be numeric (phantom id).",
+            logger.warning(
+                "account %s: phantombuster_dm_agent_id is not numeric (%r) — paste the phantom id from "
+                "Phantombuster before production",
+                a.account_id,
+                da[:80],
             )
     return True, ""
 
@@ -291,6 +286,24 @@ def _validate_distinct_connect_agents(accounts: list[AccountConfig]) -> tuple[bo
                 f"duplicate_connect_agent_id:{cid} accounts {seen[cid]} and {a.account_id}",
             )
         seen[cid] = a.account_id
+    return True, ""
+
+
+def _validate_distinct_dm_agents(accounts: list[AccountConfig]) -> tuple[bool, str]:
+    """When STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS is true, also forbid duplicate DM phantom ids across accounts."""
+    if not STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS or len(accounts) < 2:
+        return True, ""
+    seen: dict[str, str] = {}
+    for a in accounts:
+        did = _dm_agent_id(a)
+        if not did:
+            continue
+        if did in seen:
+            return (
+                False,
+                f"duplicate_dm_agent_id:{did} accounts {seen[did]} and {a.account_id}",
+            )
+        seen[did] = a.account_id
     return True, ""
 
 
@@ -327,13 +340,16 @@ def run_engagement(
         logger.error("Engagement aborted: %s", reason)
         conn.close()
         return
+    ok_dm, reason_dm = _validate_distinct_dm_agents(accounts)
+    if not ok_dm:
+        logger.error("Engagement aborted: %s", reason_dm)
+        conn.close()
+        return
 
     _log_account_phantom_mapping(accounts, conn)
     pb = PhantombusterClient()
     cap = max_leads_per_account if max_leads_per_account is not None else ENGAGEMENT_MAX_LEADS_PER_ACCOUNT
     cap = max(1, int(cap))
-    shared_connect_ids = _shared_phantom_agent_ids(accounts, kind="connect")
-    shared_dm_ids = _shared_phantom_agent_ids(accounts, kind="dm")
 
     for account in accounts:
         logger.info(
@@ -342,13 +358,11 @@ def run_engagement(
             dry_run,
             cap,
         )
-        _process_connects(
-            conn, pb, account, dry_run=dry_run, sql_limit=cap, shared_connect_ids=shared_connect_ids
-        )
-        _process_dms(conn, pb, account, dry_run=dry_run, sql_limit=cap, shared_dm_ids=shared_dm_ids)
-        _process_followup_1(conn, pb, account, dry_run=dry_run, sql_limit=cap, shared_dm_ids=shared_dm_ids)
-        _process_followup_2(conn, pb, account, dry_run=dry_run, sql_limit=cap, shared_dm_ids=shared_dm_ids)
-        _process_followup_3(conn, pb, account, dry_run=dry_run, sql_limit=cap, shared_dm_ids=shared_dm_ids)
+        _process_connects(conn, pb, account, dry_run=dry_run, sql_limit=cap)
+        _process_dms(conn, pb, account, dry_run=dry_run, sql_limit=cap)
+        _process_followup_1(conn, pb, account, dry_run=dry_run, sql_limit=cap)
+        _process_followup_2(conn, pb, account, dry_run=dry_run, sql_limit=cap)
+        _process_followup_3(conn, pb, account, dry_run=dry_run, sql_limit=cap)
     conn.close()
 
 
@@ -359,7 +373,6 @@ def _process_connects(
     *,
     dry_run: bool,
     sql_limit: int,
-    shared_connect_ids: frozenset[str],
 ) -> None:
     agent_id = _connect_agent_id(account)
     linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
@@ -486,24 +499,6 @@ def _process_connects(
                 linkedin_url=str(lead.get("linkedin_url") or ""),
                 message=note,
             )
-            if agent_id in shared_connect_ids and pb.is_agent_runtime_busy(agent_id):
-                logger.warning(
-                    "phantom_slot_busy_yield action=connect agent_id=%s account_id=%s",
-                    agent_id,
-                    account.account_id,
-                )
-                log_action(
-                    conn,
-                    lead_id=lead_id,
-                    account_id=account.account_id,
-                    action_type="connect",
-                    status="skipped",
-                    detail="phantom_slot_busy_yield|connect",
-                    strategy_used=strategy,
-                    dry_run=False,
-                    linkedin_session=linkedin_session,
-                )
-                break
             try:
                 result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
                 ok_pb = result.get("status") == "finished"
@@ -528,7 +523,7 @@ def _process_connects(
             except Exception as e:
                 ok_pb = False
                 result = {}
-                phantom_summary = f"exception:{type(e).__name__}:{e!s}"[:900]
+                phantom_summary = format_phantom_api_error(e)
                 _log_phantom_after(
                     "connect",
                     account_id=account.account_id,
@@ -550,7 +545,9 @@ def _process_connects(
                 account_id=account.account_id,
                 action_type="connect",
                 status="ok" if ok_pb else "error",
-                detail=("pb_finished|" if ok_pb else "pb_error|") + detail,
+                detail=(
+                    ("pb_finished|" if ok_pb else ("pb_error|" + _pb_error_detail_suffix(phantom_summary))) + detail
+                ),
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=False,
@@ -593,7 +590,6 @@ def _process_dms(
     *,
     dry_run: bool,
     sql_limit: int,
-    shared_dm_ids: frozenset[str],
 ) -> None:
     agent_id = _dm_agent_id(account)
     linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
@@ -709,24 +705,6 @@ def _process_dms(
                 linkedin_url=str(lead.get("linkedin_url") or ""),
                 message=body,
             )
-            if agent_id in shared_dm_ids and pb.is_agent_runtime_busy(agent_id):
-                logger.warning(
-                    "phantom_slot_busy_yield action=dm agent_id=%s account_id=%s",
-                    agent_id,
-                    account.account_id,
-                )
-                log_action(
-                    conn,
-                    lead_id=lead_id,
-                    account_id=account.account_id,
-                    action_type="dm",
-                    status="skipped",
-                    detail="phantom_slot_busy_yield|dm",
-                    strategy_used=strategy,
-                    dry_run=False,
-                    linkedin_session=linkedin_session,
-                )
-                break
             try:
                 result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
                 ok_pb = result.get("status") == "finished"
@@ -751,7 +729,7 @@ def _process_dms(
             except Exception as e:
                 ok_pb = False
                 result = {}
-                phantom_summary = f"exception:{type(e).__name__}:{e!s}"[:900]
+                phantom_summary = format_phantom_api_error(e)
                 _log_phantom_after(
                     "dm",
                     account_id=account.account_id,
@@ -773,7 +751,14 @@ def _process_dms(
                 account_id=account.account_id,
                 action_type="dm",
                 status="ok" if ok_pb else "error",
-                detail=("first_dm:pb_finished|" if ok_pb else "first_dm:pb_error|") + detail,
+                detail=(
+                    (
+                        "first_dm:pb_finished|"
+                        if ok_pb
+                        else ("first_dm:pb_error|" + _pb_error_detail_suffix(phantom_summary))
+                    )
+                    + detail
+                ),
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=False,
@@ -816,7 +801,6 @@ def _process_followup_1(
     *,
     dry_run: bool,
     sql_limit: int,
-    shared_dm_ids: frozenset[str],
 ) -> None:
     _, gap_fu1, _, _ = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
@@ -847,7 +831,6 @@ def _process_followup_1(
             dry_run=dry_run,
             linkedin_session=linkedin_session,
             agent_id=agent_id,
-            shared_dm_ids=shared_dm_ids,
         )
         if not cont:
             break
@@ -860,7 +843,6 @@ def _process_followup_2(
     *,
     dry_run: bool,
     sql_limit: int,
-    shared_dm_ids: frozenset[str],
 ) -> None:
     _, _, gap_fu2, _ = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
@@ -891,7 +873,6 @@ def _process_followup_2(
             dry_run=dry_run,
             linkedin_session=linkedin_session,
             agent_id=agent_id,
-            shared_dm_ids=shared_dm_ids,
         )
         if not cont:
             break
@@ -904,7 +885,6 @@ def _process_followup_3(
     *,
     dry_run: bool,
     sql_limit: int,
-    shared_dm_ids: frozenset[str],
 ) -> None:
     _, _, _, gap_fu3 = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
@@ -935,7 +915,6 @@ def _process_followup_3(
             dry_run=dry_run,
             linkedin_session=linkedin_session,
             agent_id=agent_id,
-            shared_dm_ids=shared_dm_ids,
         )
         if not cont:
             break
@@ -951,7 +930,6 @@ def _send_followup_dm(
     dry_run: bool,
     linkedin_session: str,
     agent_id: str,
-    shared_dm_ids: frozenset[str],
 ) -> bool:
     approval = approve_action(conn, account, "dm")
     if not approval.allowed:
@@ -1024,25 +1002,6 @@ def _send_followup_dm(
             linkedin_url=str(lead.get("linkedin_url") or ""),
             message=body,
         )
-        if agent_id in shared_dm_ids and pb.is_agent_runtime_busy(agent_id):
-            logger.warning(
-                "phantom_slot_busy_yield action=%s agent_id=%s account_id=%s",
-                stage_key,
-                agent_id,
-                account.account_id,
-            )
-            log_action(
-                conn,
-                lead_id=lead_id,
-                account_id=account.account_id,
-                action_type="dm",
-                status="skipped",
-                detail=f"phantom_slot_busy_yield|{stage_key}",
-                strategy_used=strategy,
-                dry_run=False,
-                linkedin_session=linkedin_session,
-            )
-            return False
         try:
             result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
             ok_pb = result.get("status") == "finished"
@@ -1059,7 +1018,7 @@ def _send_followup_dm(
         except Exception as e:
             ok_pb = False
             result = {}
-            phantom_summary = f"exception:{type(e).__name__}:{e!s}"[:900]
+            phantom_summary = format_phantom_api_error(e)
             _log_phantom_after(
                 stage_key,
                 account_id=account.account_id,
@@ -1076,7 +1035,10 @@ def _send_followup_dm(
             account_id=account.account_id,
             action_type="dm",
             status="ok" if ok_pb else "error",
-            detail=(f"{stage_key}:pb_finished|" if ok_pb else f"{stage_key}:pb_error|") + detail,
+            detail=(
+                (f"{stage_key}:pb_finished|" if ok_pb else (f"{stage_key}:pb_error|" + _pb_error_detail_suffix(phantom_summary)))
+                + detail
+            ),
             strategy_used=strategy,
             message_variant=msg_var,
             dry_run=False,

@@ -91,6 +91,7 @@ export function Automation() {
                 <th>Account</th>
                 <th>Lead</th>
                 <th>Detail</th>
+                <th>Phantombuster API Error</th>
                 <th>Note preview</th>
               </tr>
             </thead>
@@ -106,6 +107,12 @@ export function Automation() {
                   <td>{String(row.account_id || '')}</td>
                   <td className="mono small">{String(row.lead_id || '').slice(0, 18)}…</td>
                   <td>{String(row.detail || '')}</td>
+                  <td
+                    className="clip mono small"
+                    title={String(row.phantom_response ?? '')}
+                  >
+                    {String(row.phantom_response || '')}
+                  </td>
                   <td className="clip">{String(row.message_variant || '')}</td>
                 </tr>
               ))}

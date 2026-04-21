@@ -244,7 +244,7 @@ DRY_RUN = _truthy_env("DRY_RUN", "false")
 LOG_DIR = Path(os.getenv("LOG_DIR", str(BASE_DIR / "logs")))
 # Max leads processed per account per connect (and per DM) pass when --max-leads is omitted.
 ENGAGEMENT_MAX_LEADS_PER_ACCOUNT = int(os.getenv("ENGAGEMENT_MAX_LEADS_PER_ACCOUNT", "50"))
-# If true and 2+ accounts share the same non-empty connect agent id, abort engagement (misconfiguration).
+# If true and 2+ accounts share the same non-empty connect or DM agent id, abort engagement (misconfiguration).
 STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS = _truthy_env("STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS", "false")
 # If true, a connect/DM phantom failure whose logs look like an expired LinkedIn session sets accounts_meta.paused=1
 # for that account so the run stops hammering Phantombuster until you refresh cookies and run: python main.py --resume-account <id>

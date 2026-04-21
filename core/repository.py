@@ -311,6 +311,8 @@ def fetch_leads_for_scoring(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def distribute_qualified_leads(conn: sqlite3.Connection, accounts: list[AccountConfig]) -> int:
+    """Round-robin QUALIFIED leads across `accounts` (any length >= 1). Leads already assigned to a removed
+    account_id (e.g. legacy acc_b) are unchanged until you UPDATE leads.account_id manually or re-qualify."""
     rows = list(
         conn.execute(
             """

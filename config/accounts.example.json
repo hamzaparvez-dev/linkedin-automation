@@ -11,8 +11,8 @@
       "delay_range_sec": [30, 180],
       "steady_daily_limits": { "connect": 20, "dm": 15, "reply": 10 },
       "weekend_actions": true,
-      "phantombuster_connect_agent_id": "PASTE_NUMERIC_CONNECT_PHANTOM_ID_FOR_A",
-      "phantombuster_dm_agent_id": "PASTE_NUMERIC_DM_PHANTOM_ID_FOR_A"
+      "phantombuster_connect_agent_id": "UNIQUE_A_CONNECT_ID",
+      "phantombuster_dm_agent_id": "UNIQUE_A_DM_ID"
     },
     {
       "account_id": "acc_c",
@@ -24,8 +24,8 @@
       "delay_range_sec": [60, 180],
       "steady_daily_limits": { "connect": 15, "dm": 10, "reply": 6 },
       "weekend_actions": true,
-      "phantombuster_connect_agent_id": "PASTE_NUMERIC_CONNECT_PHANTOM_ID_FOR_C",
-      "phantombuster_dm_agent_id": "PASTE_NUMERIC_DM_PHANTOM_ID_FOR_C"
+      "phantombuster_connect_agent_id": "UNIQUE_C_CONNECT_ID",
+      "phantombuster_dm_agent_id": "UNIQUE_C_DM_ID"
     }
   ]
 }

@@ -4,8 +4,148 @@
 |--------|--------|
 | **Document** | Product Requirements Document |
 | **Version** | 2.0 |
-| **Last updated** | April 2026 |
+| **Last updated** | April 2026 (includes operations manual) |
 | **Audience** | Client delivery, engineering, operations |
+
+---
+
+## Operations manual — LinkedIn automation agency (production)
+
+This section describes the **as-built, production-ready** system for operators and client delivery. It complements the PRD sections below (requirements and deep design).
+
+### OM-1. System overview
+
+The platform is an **autonomous, multi-account LinkedIn lead-generation and engagement engine** designed to run **24/7 on a server** with bounded concurrency, per-identity limits, and durable state in SQLite.
+
+| Layer | Technology |
+|--------|------------|
+| **Core engine** | Python 3 — orchestration, scoring, state machine, repository, daily automation |
+| **AI messaging** | Python — strategy-based composers + validation (`core/ai_engine.py`, `core/strategy_engine.py`) |
+| **Automation & outbound** | Python — Phantombuster client, engagement runner, behavior controller |
+| **API & dashboard** | **FastAPI** (`dashboard_app/main.py`) — REST + optional static SPA |
+| **Persistence** | **SQLite** — `leads`, `accounts_meta`, `action_log`, `metrics_daily`, … |
+| **Operator UI** | **React + Vite** (`frontend/`) — hash routes (`/#/`, `/#/leads`, …) |
+
+High-level flow: **discover / import leads → enrich & score → qualify → assign to accounts → connect / DM / follow-ups** with logs and metrics suitable for agency reporting.
+
+### OM-2. Core features and safety mechanisms
+
+#### Multi-account rotation and exclusivity
+
+Qualified leads with no `account_id` are distributed by **`distribute_qualified_leads`** in [`core/repository.py`](core/repository.py): rows are selected in **score / creation order**, then assigned **round-robin** across `config/accounts.json` (`accounts[i % n].account_id`). Each lead receives **exactly one** `account_id` and transitions to **`ASSIGNED_TO_ACCOUNT`**. That **prevents the same lead from being claimed by two identities**, which avoids duplicate outreach from parallel accounts. If you remove an account from JSON, existing rows still tied to that old `account_id` are not auto-migrated; reassign them in SQLite (or clear `account_id` and set status back to `QUALIFIED`) so engagement picks them up again.
+
+#### Behavior controller (“anti-ban” guardrails)
+
+[`core/behavior_controller.py`](core/behavior_controller.py) gates every outbound **connect / DM / reply** via `approve_action`:
+
+| Control | Source | Behavior |
+|---------|--------|----------|
+| **Working hours** | Per-account `schedule_start` / `schedule_end` in [`config/accounts.json`](config/accounts.example.json) | Actions only allowed inside the window (minute resolution). |
+| **Weekends** | `weekend_actions` per account | If `false`, **no** outbound on Sat/Sun for that account. |
+| **Clock** | Server `datetime.now().astimezone()` | Uses the **host OS timezone** (not hard-coded IST). Set Linux `TZ` (e.g. `Asia/Kolkata`) on the VPS for IST-aligned windows. |
+| **Daily caps** | `steady_daily_limits` + ramp (`first_action_date`) + **hard caps** (`HARD_CAP_*` in `.env`) | Effective cap is the tighter of steady, ramp, and global hard caps. |
+| **Burst smoothing** | `BURST_WINDOW_MINUTES`, `BURST_MAX_ACTIONS` | Limits rapid-fire actions per account. |
+| **Inter-action delay** | `delay_range_sec` per account | Random sleep between actions in [`core/engagement_runner.py`](core/engagement_runner.py). |
+| **Pause** | `accounts_meta.paused` | Stops automation for an identity until `--resume-account`. |
+
+Together, these mimic **independent SDRs** rather than a single bulk bot.
+
+#### AI-assisted messaging
+
+Connection notes (and DM copy where applicable) are composed through the **strategy engine** and **AI engine**, then validated (e.g. length, repetition) before Phantombuster launch. Templates and strategy names (`direct`, `curiosity`, `value`, …) are configured per account.
+
+#### Fault tolerance and deduplication
+
+| Mechanism | Where | Purpose |
+|-----------|--------|---------|
+| **Single-instance lock** | [`core/daily_automation.py`](core/daily_automation.py) `_single_instance_lock` | Prevents overlapping **daily automation** runs (cron + manual double-start). |
+| **PM2** | [`ecosystem.config.js`](ecosystem.config.js) | Process supervision for the **engagement** worker: `autorestart`, bounded `max_restarts`, `restart_delay`. |
+| **SQLite `ON CONFLICT DO NOTHING`** | CSV import insert path [`core/repository.py`](core/repository.py) `insert_lead_csv_import` | Re-imports do not overwrite existing `lead_id` rows. |
+| **Dedicated Phantombuster agents** | [`config/accounts.json`](config/accounts.example.json) + optional `STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS` in `.env` | Each LinkedIn identity uses its own connect + DM phantom ids; strict mode aborts if connect or DM ids duplicate across accounts. |
+
+### OM-3. Lead lifecycle (pipeline)
+
+Statuses are enforced by [`core/state_machine.py`](core/state_machine.py). Primary **outbound** path:
+
+```text
+NEW → ENRICHED → QUALIFIED → ASSIGNED_TO_ACCOUNT → INVITED → CONNECTED → MESSAGED → FOLLOW_UP_1 → …
+```
+
+| Stage | Meaning |
+|--------|---------|
+| **NEW** | Ingested; may lack enrichment. |
+| **ENRICHED** | LinkedIn / PB signals attached where applicable. |
+| **QUALIFIED** | Meets score threshold; eligible for assignment. |
+| **ASSIGNED_TO_ACCOUNT** | Bound to one `account_id` for outreach. |
+| **INVITED** | Connect request sent (Phantombuster). |
+| **CONNECTED** | Accept observed / promoted; eligible for first DM on schedule. |
+
+Terminal / reply states (`REPLIED`, `POSITIVE`, `NEGATIVE`, …) and failures (`FAILED`) are documented in the state machine module.
+
+### OM-4. Data sources (how to feed the engine)
+
+#### Apollo.io (API)
+
+Default pipeline uses **Apollo Web3 extraction** and related config (`APOLLO_*`, `DAILY_APOLLO_TARGET`, …). When **`APOLLO_EXTRACT_BULK_MATCH`** is enabled (default in code paths that call bulk match), Apollo **consumes credits** to hydrate LinkedIn URLs and emails—document this for finance / ops.
+
+#### Apify CSV import (dashboard, no Apollo enrichment cost)
+
+Operators can upload **cleaned Apify CSV exports** via the dashboard **Leads (SQLite)** page: **Choose CSV → Upload** → `POST /api/leads/import`.
+
+- Rows are inserted as **`NEW`**, **`score = 0`**, with **`ON CONFLICT(lead_id) DO NOTHING`** so existing leads are never removed.
+- Column headers vary by Apify actor; the synonym map lives in [`dashboard_app/apify_csv_import.py`](dashboard_app/apify_csv_import.py) (`_ALIASES`). Extend that map when a new export’s headers do not match.
+
+After import, leads still need **scoring / qualification / assignment** (see OM-3) before engagement picks them up, unless your process promotes them through those steps.
+
+### OM-5. Deployment and operations (Linux VPS, e.g. Hostinger)
+
+Assume **Ubuntu**, repo cloned under e.g. `/var/www/leadgen`, **Python venv** from [`setup.sh`](setup.sh), secrets in **`.env`** and **`config/accounts.json`** (not committed).
+
+#### Dashboard (FastAPI + built SPA)
+
+| Action | Command / URL |
+|--------|----------------|
+| **Serve API + static UI** | `cd <repo> && python3 -m uvicorn dashboard_app.main:app --host 0.0.0.0 --port 8080` (production: use systemd or a reverse proxy + TLS). |
+| **Open dashboard** | `http://<SERVER_IP>:8080/` (hash routes: `/#/leads`, …). Ensure **firewall / security group** allows TCP **8080** (or map behind nginx). |
+
+Development alternative: `npm run dashboard:dev` (Vite + API proxy) — see §18.1.
+
+#### PM2 — engagement worker
+
+[`ecosystem.config.js`](ecosystem.config.js) defines process **`leadgen-engagement`** (`main.py --engagement-only --multi-account-run` using `./venv/bin/python`).
+
+| Operator task | Command |
+|-----------------|---------|
+| **Stream logs** | `pm2 logs leadgen-engagement` |
+| **Restart** | `pm2 restart leadgen-engagement` |
+| **Status** | `pm2 status` |
+
+#### Safe dry-run (daily pipeline without live Phantombuster engagement)
+
+```bash
+cd <repo> && source venv/bin/activate
+python main.py --daily-automation --dry-run
+```
+
+Resolves engagement dry-run via [`config.resolve_engagement_dry_run`](config.py): **`--dry-run`** forces no PB launches for the engagement tail; **`--live`** overrides env `DRY_RUN` when intentional.
+
+#### Scheduled daily automation (07:00)
+
+The in-repo **default schedule time** for the long-running scheduler is **`DAILY_SCHEDULE_TIME`** (default **`07:00`**) when using:
+
+```bash
+python main.py --schedule
+```
+
+For a **VPS-style cron job** (recommended for predictable wake-ups without keeping `schedule` process alive), add a **crontab** entry, for example **07:00 local server time** daily:
+
+```cron
+0 7 * * * cd /var/www/leadgen && /var/www/leadgen/venv/bin/python main.py --daily-automation >> /var/www/leadgen/logs/cron_daily.log 2>&1
+```
+
+Adjust path, user, and logging directory. Load the same environment as manual runs (e.g. `Environment=` in systemd, or `set -a; source .env; set +a` in a wrapper script if not using systemd `EnvironmentFile`).
+
+> **Note:** `ecosystem.config.js` currently runs **engagement-only**. The **full daily pipeline** (Apollo + merge + enrich + assign + engagement) is **`python main.py --daily-automation`** — wire **cron** or **separate PM2 app** for that if engagement PM2 alone is not sufficient for your agency workflow.
 
 ---
 

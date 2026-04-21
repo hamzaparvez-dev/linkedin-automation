@@ -24,6 +24,62 @@ from config import (
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
+# Max chars of response body captured for logs / SQLite.
+_MAX_PB_ERROR_BODY = 2000
+_MAX_FORMAT_MSG = _MAX_PB_ERROR_BODY + 200
+
+
+def _truncate_pb_body(text: str, max_len: int = _MAX_PB_ERROR_BODY) -> str:
+    t = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(t) <= max_len:
+        return t
+    return t[: max_len - 3] + "..."
+
+
+class PhantombusterHttpError(RuntimeError):
+    """Phantombuster REST returned a non-success status or an unusable success payload."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        body_snippet: str,
+        context: str = "",
+        url: str = "",
+    ) -> None:
+        self.status_code = status_code
+        self.body_snippet = _truncate_pb_body(body_snippet)
+        self.context = (context or "").strip()
+        self.url = (url or "").strip()
+        head = f"{self.context} " if self.context else ""
+        tail = f": {self.body_snippet}" if self.body_snippet else (f" ({self.url})" if self.url else "")
+        full = f"{head}HTTP {status_code}{tail}"
+        super().__init__(full[:_MAX_FORMAT_MSG])
+
+    @classmethod
+    def from_response(cls, resp: requests.Response, *, context: str = "") -> "PhantombusterHttpError":
+        try:
+            body = resp.text or ""
+        except Exception:
+            body = ""
+        return cls(
+            status_code=int(resp.status_code),
+            body_snippet=body,
+            context=context,
+            url=str(getattr(resp, "url", "") or ""),
+        )
+
+
+def format_phantom_api_error(exc: BaseException) -> str:
+    """String for action_log / UI when a Phantombuster HTTP call or parse step fails."""
+    if isinstance(exc, PhantombusterHttpError):
+        return str(exc)[:_MAX_FORMAT_MSG]
+    if isinstance(exc, requests.HTTPError):
+        r = exc.response
+        if r is not None:
+            return str(PhantombusterHttpError.from_response(r, context="HTTPError"))[:_MAX_FORMAT_MSG]
+    return f"exception:{type(exc).__name__}:{exc!s}"[:900]
+
 
 # Serialize launch+wait per agent id across all PhantombusterClient instances.
 _agent_launch_locks: dict[str, threading.Lock] = {}
@@ -111,13 +167,55 @@ class PhantombusterClient:
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 resp = self.session.post(url, json=payload, timeout=120)
-                resp.raise_for_status()
-                container_id = resp.json().get("containerId")
+                if not resp.ok:
+                    last_err = PhantombusterHttpError.from_response(resp, context="POST /agents/launch")
+                    logger.warning(
+                        "[Phantombuster] launch attempt %s/%s failed: %s", attempt, MAX_RETRIES, last_err
+                    )
+                    time.sleep(2**attempt)
+                    continue
+                try:
+                    data = resp.json()
+                except (ValueError, json.JSONDecodeError) as je:
+                    raw = _truncate_pb_body(getattr(resp, "text", "") or "", max_len=800)
+                    last_err = PhantombusterHttpError(
+                        status_code=resp.status_code,
+                        body_snippet=f"invalid JSON ({je}); body={raw}",
+                        context="POST /agents/launch",
+                        url=str(getattr(resp, "url", "") or ""),
+                    )
+                    logger.warning(
+                        "[Phantombuster] launch attempt %s/%s failed: %s", attempt, MAX_RETRIES, last_err
+                    )
+                    time.sleep(2**attempt)
+                    continue
+                container_id = data.get("containerId") if isinstance(data, dict) else None
+                if not container_id:
+                    blob = (
+                        json.dumps(data, ensure_ascii=False, default=str)
+                        if isinstance(data, dict)
+                        else str(data)
+                    )
+                    last_err = PhantombusterHttpError(
+                        status_code=resp.status_code,
+                        body_snippet=f"missing containerId; response={blob}",
+                        context="POST /agents/launch",
+                        url=str(getattr(resp, "url", "") or ""),
+                    )
+                    logger.warning(
+                        "[Phantombuster] launch attempt %s/%s failed: %s", attempt, MAX_RETRIES, last_err
+                    )
+                    time.sleep(2**attempt)
+                    continue
                 logger.info("[Phantombuster] Agent %s launched. Container: %s", agent_id, container_id)
-                return str(container_id or "")
-            except Exception as e:
-                last_err = e
-                logger.warning("[Phantombuster] launch attempt %s/%s failed: %s", attempt, MAX_RETRIES, e)
+                return str(container_id)
+            except requests.RequestException as e:
+                r = getattr(e, "response", None)
+                if r is not None:
+                    last_err = PhantombusterHttpError.from_response(r, context="POST /agents/launch")
+                else:
+                    last_err = e
+                logger.warning("[Phantombuster] launch attempt %s/%s failed: %s", attempt, MAX_RETRIES, last_err)
                 time.sleep(2**attempt)
         raise last_err or RuntimeError("launch failed")
 
@@ -155,8 +253,19 @@ class PhantombusterClient:
 
         while datetime.utcnow() < deadline:
             resp = self.session.get(url, params={"id": container_id})
-            resp.raise_for_status()
-            result = resp.json()
+            if not resp.ok:
+                raise PhantombusterHttpError.from_response(
+                    resp, context="GET /containers/fetch-result-object"
+                )
+            try:
+                result = resp.json()
+            except (ValueError, json.JSONDecodeError) as je:
+                raise PhantombusterHttpError(
+                    status_code=resp.status_code,
+                    body_snippet=f"invalid JSON ({je}); body={_truncate_pb_body(resp.text or '', max_len=800)}",
+                    context="GET /containers/fetch-result-object",
+                    url=str(getattr(resp, 'url', '') or ''),
+                ) from je
             status = result.get("status")
 
             if status == "finished":
@@ -176,8 +285,17 @@ class PhantombusterClient:
         """Download and parse the agent's output data."""
         url = f"{PHANTOMBUSTER_BASE_URL}/containers/fetch-output"
         resp = self.session.get(url, params={"id": container_id})
-        resp.raise_for_status()
-        data = resp.json()
+        if not resp.ok:
+            raise PhantombusterHttpError.from_response(resp, context="GET /containers/fetch-output")
+        try:
+            data = resp.json()
+        except (ValueError, json.JSONDecodeError) as je:
+            raise PhantombusterHttpError(
+                status_code=resp.status_code,
+                body_snippet=f"invalid JSON ({je}); body={_truncate_pb_body(resp.text or '', max_len=800)}",
+                context="GET /containers/fetch-output",
+                url=str(getattr(resp, 'url', '') or ''),
+            ) from je
 
         # Phantombuster output is in resultObject as JSON array
         result_object = data.get("resultObject", "[]")
@@ -249,93 +367,6 @@ class PhantombusterClient:
             cid = self._launch_agent_unlocked(agent_id, argument, bonus_argument)
             result = self.wait_for_completion(cid, timeout_minutes=timeout_minutes)
         return result, cid
-
-    def is_agent_runtime_busy(self, agent_id: str) -> bool:
-        """
-        True if Phantombuster reports a non-finished container for this agent (or on HTTP/parse errors — fail-safe).
-
-        Uses GET /orgs/fetch-running-containers when possible, then GET /agents/fetch as a heuristic fallback.
-        """
-        aid = str(agent_id or "").strip()
-        if not aid:
-            return True
-
-        def _containers_from_payload(data: Any) -> list[dict[str, Any]]:
-            if isinstance(data, list):
-                return [x for x in data if isinstance(x, dict)]
-            if isinstance(data, dict):
-                raw: list[Any] = []
-                for key in ("containers", "runningContainers", "data", "running", "containerObject"):
-                    v = data.get(key)
-                    if isinstance(v, list):
-                        raw = v
-                        break
-                if not raw:
-                    v2 = data.get("containersObject")
-                    if isinstance(v2, list):
-                        raw = v2
-                return [x for x in raw if isinstance(x, dict)]
-            return []
-
-        terminal = frozenset({"finished", "error", "aborted", "failed", "stopped", "killed", "not running", "not_running"})
-
-        try:
-            url = f"{PHANTOMBUSTER_BASE_URL}/orgs/fetch-running-containers"
-            resp = self.session.get(url, timeout=45)
-            resp.raise_for_status()
-            items = _containers_from_payload(resp.json())
-        except Exception as e:
-            logger.warning(
-                "[Phantombuster] is_agent_runtime_busy: fetch-running-containers failed agent_id=%s err=%s — treating as busy",
-                aid,
-                e,
-            )
-            return True
-
-        for item in items:
-            ag = str(item.get("agentId") or item.get("agent_id") or "").strip()
-            if ag != aid:
-                continue
-            st = str(item.get("status") or item.get("state") or "").strip().lower()
-            if st in terminal:
-                continue
-            # Endpoint is running containers; missing/unknown status still counts as busy.
-            logger.info("[Phantombuster] is_agent_runtime_busy agent_id=%s (running-containers) status=%r", aid, st or None)
-            return True
-
-        try:
-            url2 = f"{PHANTOMBUSTER_BASE_URL}/agents/fetch"
-            r2 = self.session.get(url2, params={"id": aid}, timeout=45)
-            r2.raise_for_status()
-            agent = r2.json()
-        except Exception as e:
-            logger.warning(
-                "[Phantombuster] is_agent_runtime_busy: agents/fetch fallback failed agent_id=%s err=%s — treating as busy",
-                aid,
-                e,
-            )
-            return True
-
-        if not isinstance(agent, dict):
-            return False
-
-        for key in ("running", "isRunning", "isLaunching", "containerRunning", "hasRunningContainer"):
-            if agent.get(key) is True:
-                logger.info("[Phantombuster] is_agent_runtime_busy agent_id=%s (agents/fetch flag %s)", aid, key)
-                return True
-
-        for nest_key in ("runningContainer", "running_container", "latestContainer", "lastContainer"):
-            rc = agent.get(nest_key)
-            if isinstance(rc, dict):
-                st = str(rc.get("status") or "").strip().lower()
-                if st and st not in terminal:
-                    logger.info("[Phantombuster] is_agent_runtime_busy agent_id=%s (%s.status=%r)", aid, nest_key, st)
-                    return True
-                if rc.get("id") and not st:
-                    logger.info("[Phantombuster] is_agent_runtime_busy agent_id=%s (%s present, no terminal status)", aid, nest_key)
-                    return True
-
-        return False
 
     # ── Parse a single Phantombuster profile result ───────────────────────────
     def _parse_profile(self, profile: dict) -> dict:
