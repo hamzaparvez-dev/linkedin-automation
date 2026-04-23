@@ -292,3 +292,13 @@ h3 {
   margin: 0.35rem 0 0;
   font-size: 0.9rem;
 }
+
+tr.action-ok {
+  background: rgba(22, 101, 52, 0.2);
+}
+tr.action-error {
+  background: rgba(127, 29, 29, 0.25);
+}
+tr.action-skipped {
+  background: rgba(30, 58, 138, 0.2);
+}

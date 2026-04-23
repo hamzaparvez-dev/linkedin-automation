@@ -10,8 +10,11 @@ from typing import Any, Optional
 
 from config import (
     ACCOUNT_CONFIG_PATH,
+    DM_NOT_CONNECTED_COOLDOWN_DAYS,
     ENGAGEMENT_AUTO_PAUSE_ACCOUNT_ON_PB_AUTH_FAILURE,
     ENGAGEMENT_MAX_LEADS_PER_ACCOUNT,
+    MAX_CONNECT_NOTE_CHARS,
+    OPTIMISTIC_FIRST_DM_DAYS,
     PHANTOMBUSTER_CONNECT_AGENT_ID,
     PHANTOMBUSTER_DM_AGENT_ID,
     STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS,
@@ -21,12 +24,15 @@ from core.accounts_loader import AccountConfig, load_accounts_document
 from core.ai_engine import OutreachResult, validate_outreach_plaintext
 from core.behavior_controller import approve_action, record_action_executed, set_account_paused
 from core.phantom_payload import (
+    append_fetch_output_to_summary,
     build_engagement_argument,
     looks_like_linkedin_session_cookie,
     looks_plausible_browser_user_agent,
     merge_phantom_launch_defaults,
     normalize_session_cookie_for_bonus,
     phantom_failure_suggests_linkedin_session_issue,
+    phantom_outcome_suggests_cannot_message_not_first_degree,
+    phantom_outcome_suggests_input_already_processed,
     summarize_phantom_result,
     validate_engagement_argument,
 )
@@ -40,6 +46,7 @@ from core.repository import (
     recent_messages_for_repetition,
     record_sent_message,
     row_to_lead_dict,
+    schedule_next_dm_retry_in_days,
     sync_accounts_meta,
     transition_lead_status,
     utc_now_iso,
@@ -74,9 +81,42 @@ def _calendar_days_since_iso(ts: Optional[str]) -> int:
     return (today - event_day).days
 
 
-# Do not automate outbound if lead already engaged terminally or awaiting human.
+def _next_dm_attempt_blocks_row(row: Any) -> bool:
+    """True if next_dm_attempt_at is in the future (retry cooldown after not-1st-degree)."""
+    try:
+        raw = row["next_dm_attempt_at"]
+    except (KeyError, IndexError, TypeError):
+        return False
+    if not raw or not str(raw).strip():
+        return False
+    t = _parse_ts(str(raw))
+    if not t:
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) < t
+
+
+def _row_eligible_for_first_dm(row: Any, *, min_days_after_connect: int) -> bool:
+    st = (row["status"] or "").strip()
+    if st == "CONNECTED":
+        ca = row["connected_at"]
+        if not ca or not str(ca).strip():
+            return False
+        return _calendar_days_since_iso(str(ca)) >= min_days_after_connect
+    if st == "INVITED":
+        if _next_dm_attempt_blocks_row(row):
+            return False
+        ia = row["invited_at"]
+        if not ia or not str(ia).strip():
+            return False
+        return _calendar_days_since_iso(str(ia)) >= max(0, int(OPTIMISTIC_FIRST_DM_DAYS))
+    return False
+
+
+# Do not automate outbound if the prospect has replied or reached a terminal / human state.
 _STOP_OUTBOUND_STATUSES_SQL = (
-    "AND leads.status NOT IN ('REPLIED','POSITIVE','NEGATIVE','HUMAN_REVIEW')"
+    "AND leads.status NOT IN ('REPLIED','POSITIVE','NEGATIVE','NEUTRAL','HUMAN_REVIEW')"
 )
 
 
@@ -154,6 +194,29 @@ def _phantom_log(pb_summary: str, ores: OutreachResult) -> str:
     if pb_summary:
         return (pb_summary + " | " + part)[:4000]
     return part[:4000]
+
+
+def _phantom_effective_outcome(
+    pb: PhantombusterClient,
+    result: dict[str, Any],
+    cid: str,
+) -> tuple[bool, bool, list[dict[str, Any]]]:
+    """
+    Phantombuster can return status=finished while the phantom skipped the line (already in memory).
+    Returns (raw_finished, effective_ok, fetch_output_rows).
+    """
+    raw = isinstance(result, dict) and result.get("status") == "finished"
+    out: list[dict[str, Any]] = []
+    if raw and cid:
+        try:
+            out = list(pb.fetch_output(cid) or [])
+        except Exception as ex:
+            logger.debug("Phantombuster fetch_output: %s", ex)
+    is_dedupe = (
+        raw
+        and phantom_outcome_suggests_input_already_processed(result, fetch_output_rows=out)
+    )
+    return raw, raw and not is_dedupe, out
 
 
 def _pb_error_detail_suffix(phantom_summary: str, *, max_len: int = 1500) -> str:
@@ -447,7 +510,9 @@ def _process_connects(
             _build_connect_argument(lead["linkedin_url"], note),
             user_agent=user_agent,
         )
-        v_ok, v_reason = validate_engagement_argument(arg, bonus_argument=bonus_arg)
+        v_ok, v_reason = validate_engagement_argument(
+            arg, bonus_argument=bonus_arg, max_message_chars=MAX_CONNECT_NOTE_CHARS
+        )
         if not v_ok:
             logger.warning("Skipping lead %s: invalid_payload:%s", lead_id, v_reason)
             log_action(
@@ -499,10 +564,14 @@ def _process_connects(
                 linkedin_url=str(lead.get("linkedin_url") or ""),
                 message=note,
             )
+            is_dedupe_skip = False
             try:
                 result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
-                ok_pb = result.get("status") == "finished"
-                phantom_summary = summarize_phantom_result(result)
+                raw_done, effective_ok, out_rows = _phantom_effective_outcome(pb, result, cid)
+                is_dedupe_skip = bool(raw_done and not effective_ok)
+                ok_pb = bool(effective_ok)
+                base_sum = summarize_phantom_result(result)
+                phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
                 _log_phantom_after(
                     "connect",
                     account_id=account.account_id,
@@ -512,9 +581,15 @@ def _process_connects(
                     container_id=cid,
                     summary=phantom_summary,
                 )
+                if is_dedupe_skip:
+                    logger.info(
+                        "Phantombuster connect: finished but line skipped (dedupe / already processed) lead=%s",
+                        lead_id,
+                    )
                 logger.info(
-                    "Phantombuster connect finished=%s container=%s account=%s lead=%s profile=%s",
-                    ok_pb,
+                    "Phantombuster connect finished=%s effective=%s container=%s account=%s lead=%s profile=%s",
+                    raw_done,
+                    effective_ok,
                     cid,
                     account.account_id,
                     lead_id,
@@ -539,22 +614,29 @@ def _process_connects(
                     lead_id,
                     linkedin_session,
                 )
+            if is_dedupe_skip:
+                _conn_detail = "pb_dedupe_already_processed|" + detail
+                _conn_status = "skipped"
+            elif ok_pb:
+                _conn_detail = "pb_finished|" + detail
+                _conn_status = "ok"
+            else:
+                _conn_detail = "pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
+                _conn_status = "error"
             log_action(
                 conn,
                 lead_id=lead_id,
                 account_id=account.account_id,
                 action_type="connect",
-                status="ok" if ok_pb else "error",
-                detail=(
-                    ("pb_finished|" if ok_pb else ("pb_error|" + _pb_error_detail_suffix(phantom_summary))) + detail
-                ),
+                status=_conn_status,
+                detail=_conn_detail,
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=False,
                 linkedin_session=linkedin_session,
                 phantom_response=_phantom_log(phantom_summary, ores),
             )
-            if _maybe_auto_pause_account_on_pb_auth(
+            if not is_dedupe_skip and _maybe_auto_pause_account_on_pb_auth(
                 conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
             ):
                 break
@@ -594,25 +676,34 @@ def _process_dms(
     agent_id = _dm_agent_id(account)
     linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
     user_agent = _resolve_engagement_user_agent(conn, account)
-    rows = conn.execute(
+    min_days_after_connect, _, _, _ = follow_up_eligibility_gaps()
+    wide = max(sql_limit * 4, 40)
+    raw_rows = conn.execute(
         f"""
         SELECT leads.* FROM leads
-        WHERE leads.account_id=? AND leads.status='CONNECTED' AND leads.first_dm_sent_at IS NULL
-          AND leads.connected_at IS NOT NULL
+        WHERE leads.account_id=?
+          AND leads.first_dm_sent_at IS NULL
+          AND leads.status IN ('CONNECTED', 'INVITED')
+          AND (
+            (leads.status='CONNECTED' AND leads.connected_at IS NOT NULL AND TRIM(COALESCE(leads.connected_at,'')) != '')
+            OR
+            (leads.status='INVITED' AND leads.invited_at IS NOT NULL AND TRIM(COALESCE(leads.invited_at,'')) != '')
+          )
           {_STOP_OUTBOUND_STATUSES_SQL}
-        ORDER BY leads.connected_at ASC
+        ORDER BY COALESCE(leads.connected_at, leads.invited_at) ASC
         LIMIT ?
         """,
-        (account.account_id, sql_limit),
+        (account.account_id, wide),
     ).fetchall()
-
-    min_days_after_connect, _, _, _ = follow_up_eligibility_gaps()
+    rows: list[Any] = []
+    for row in raw_rows:
+        if not _row_eligible_for_first_dm(row, min_days_after_connect=min_days_after_connect):
+            continue
+        rows.append(row)
+        if len(rows) >= sql_limit:
+            break
 
     for row in rows:
-        ca = row["connected_at"]
-        if not ca or _calendar_days_since_iso(str(ca)) < min_days_after_connect:
-            continue
-
         approval = approve_action(conn, account, "dm")
         if not approval.allowed:
             logger.info("DM hold: %s — %s", account.account_id, approval.reason)
@@ -705,10 +796,33 @@ def _process_dms(
                 linkedin_url=str(lead.get("linkedin_url") or ""),
                 message=body,
             )
+            is_dedupe_skip = False
+            is_not_connected = False
             try:
                 result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
-                ok_pb = result.get("status") == "finished"
-                phantom_summary = summarize_phantom_result(result)
+                raw_done = isinstance(result, dict) and result.get("status") == "finished"
+                out_rows: list[dict[str, Any]] = []
+                if raw_done and cid:
+                    try:
+                        out_rows = list(pb.fetch_output(cid) or [])
+                    except Exception as ex:
+                        logger.debug("Phantombuster fetch_output: %s", ex)
+                base_sum = summarize_phantom_result(result)
+                phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
+                is_not_connected = bool(
+                    raw_done
+                    and phantom_outcome_suggests_cannot_message_not_first_degree(
+                        result, fetch_output_rows=out_rows
+                    )
+                )
+                is_dedupe_skip = bool(
+                    raw_done
+                    and not is_not_connected
+                    and phantom_outcome_suggests_input_already_processed(
+                        result, fetch_output_rows=out_rows
+                    )
+                )
+                ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
                 _log_phantom_after(
                     "dm",
                     account_id=account.account_id,
@@ -718,18 +832,24 @@ def _process_dms(
                     container_id=cid,
                     summary=phantom_summary,
                 )
+                if is_not_connected:
+                    logger.info("Phantombuster first DM: not 1st-degree / cannot message lead=%s", lead_id)
+                if is_dedupe_skip:
+                    logger.info("Phantombuster first DM: dedupe/already processed lead=%s", lead_id)
                 logger.info(
-                    "Phantombuster DM finished=%s container=%s account=%s lead=%s profile=%s",
+                    "Phantombuster DM finished=%s not_connected=%s ok=%s container=%s account=%s lead=%s",
+                    raw_done,
+                    is_not_connected,
                     ok_pb,
                     cid,
                     account.account_id,
                     lead_id,
-                    linkedin_session,
                 )
             except Exception as e:
                 ok_pb = False
                 result = {}
                 phantom_summary = format_phantom_api_error(e)
+                is_not_connected = False
                 _log_phantom_after(
                     "dm",
                     account_id=account.account_id,
@@ -745,27 +865,34 @@ def _process_dms(
                     lead_id,
                     linkedin_session,
                 )
+            if is_not_connected:
+                _dm_d = "first_dm:pb_not_connected_yet|" + detail
+                _dm_st = "skipped"
+            elif is_dedupe_skip:
+                _dm_d = "first_dm:pb_dedupe_already_processed|" + detail
+                _dm_st = "skipped"
+            elif ok_pb:
+                _dm_d = "first_dm:pb_finished|" + detail
+                _dm_st = "ok"
+            else:
+                _dm_d = "first_dm:pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
+                _dm_st = "error"
             log_action(
                 conn,
                 lead_id=lead_id,
                 account_id=account.account_id,
                 action_type="dm",
-                status="ok" if ok_pb else "error",
-                detail=(
-                    (
-                        "first_dm:pb_finished|"
-                        if ok_pb
-                        else ("first_dm:pb_error|" + _pb_error_detail_suffix(phantom_summary))
-                    )
-                    + detail
-                ),
+                status=_dm_st,
+                detail=_dm_d,
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=False,
                 linkedin_session=linkedin_session,
                 phantom_response=_phantom_log(phantom_summary, ores),
             )
-            if _maybe_auto_pause_account_on_pb_auth(
+            if is_not_connected:
+                schedule_next_dm_retry_in_days(conn, lead_id, DM_NOT_CONNECTED_COOLDOWN_DAYS)
+            if not is_dedupe_skip and not is_not_connected and _maybe_auto_pause_account_on_pb_auth(
                 conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
             ):
                 break
@@ -777,6 +904,7 @@ def _process_dms(
                     "MESSAGED",
                     first_dm_sent_at=now,
                     last_action_at=now,
+                    next_dm_attempt_at=None,
                 )
                 record_action_executed(conn, account.account_id, "dm")
                 record_sent_message(conn, account.account_id, body, strategy)
@@ -940,6 +1068,9 @@ def _send_followup_dm(
         logger.warning("Invalid follow-up stage %s", stage_num)
         return True
 
+    if _next_dm_attempt_blocks_row(row):
+        return True
+
     user_agent = _resolve_engagement_user_agent(conn, account)
     lead = row_to_lead_dict(row)
     lead_id = lead["lead_id"]
@@ -1002,10 +1133,33 @@ def _send_followup_dm(
             linkedin_url=str(lead.get("linkedin_url") or ""),
             message=body,
         )
+        is_dedupe_skip = False
+        is_not_connected = False
         try:
             result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
-            ok_pb = result.get("status") == "finished"
-            phantom_summary = summarize_phantom_result(result)
+            raw_done = isinstance(result, dict) and result.get("status") == "finished"
+            out_rows: list[dict[str, Any]] = []
+            if raw_done and cid:
+                try:
+                    out_rows = list(pb.fetch_output(cid) or [])
+                except Exception as ex:
+                    logger.debug("Phantombuster fetch_output: %s", ex)
+            base_sum = summarize_phantom_result(result)
+            phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
+            is_not_connected = bool(
+                raw_done
+                and phantom_outcome_suggests_cannot_message_not_first_degree(
+                    result, fetch_output_rows=out_rows
+                )
+            )
+            is_dedupe_skip = bool(
+                raw_done
+                and not is_not_connected
+                and phantom_outcome_suggests_input_already_processed(
+                    result, fetch_output_rows=out_rows
+                )
+            )
+            ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
             _log_phantom_after(
                 stage_key,
                 account_id=account.account_id,
@@ -1018,6 +1172,7 @@ def _send_followup_dm(
         except Exception as e:
             ok_pb = False
             result = {}
+            is_not_connected = False
             phantom_summary = format_phantom_api_error(e)
             _log_phantom_after(
                 stage_key,
@@ -1029,23 +1184,34 @@ def _send_followup_dm(
                 summary=phantom_summary,
             )
             logger.exception("Follow-up DM phantom failed lead=%s", lead_id)
+        if is_not_connected:
+            _fu_d = f"{stage_key}:pb_not_connected_yet|" + detail
+            _fu_st = "skipped"
+        elif is_dedupe_skip:
+            _fu_d = f"{stage_key}:pb_dedupe_already_processed|" + detail
+            _fu_st = "skipped"
+        elif ok_pb:
+            _fu_d = f"{stage_key}:pb_finished|" + detail
+            _fu_st = "ok"
+        else:
+            _fu_d = f"{stage_key}:pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
+            _fu_st = "error"
         log_action(
             conn,
             lead_id=lead_id,
             account_id=account.account_id,
             action_type="dm",
-            status="ok" if ok_pb else "error",
-            detail=(
-                (f"{stage_key}:pb_finished|" if ok_pb else (f"{stage_key}:pb_error|" + _pb_error_detail_suffix(phantom_summary)))
-                + detail
-            ),
+            status=_fu_st,
+            detail=_fu_d,
             strategy_used=strategy,
             message_variant=msg_var,
             dry_run=False,
             linkedin_session=linkedin_session,
             phantom_response=_phantom_log(phantom_summary, ores),
         )
-        if _maybe_auto_pause_account_on_pb_auth(
+        if is_not_connected:
+            schedule_next_dm_retry_in_days(conn, lead_id, DM_NOT_CONNECTED_COOLDOWN_DAYS)
+        if not is_dedupe_skip and not is_not_connected and _maybe_auto_pause_account_on_pb_auth(
             conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
         ):
             return True
@@ -1058,6 +1224,7 @@ def _send_followup_dm(
                     "FOLLOW_UP_1",
                     followup_1_sent_at=now,
                     last_action_at=now,
+                    next_dm_attempt_at=None,
                 )
             elif stage_num == 2:
                 transition_lead_status(
@@ -1066,6 +1233,7 @@ def _send_followup_dm(
                     "FOLLOW_UP_2",
                     followup_2_sent_at=now,
                     last_action_at=now,
+                    next_dm_attempt_at=None,
                 )
             else:
                 transition_lead_status(
@@ -1074,6 +1242,7 @@ def _send_followup_dm(
                     "FOLLOW_UP_3",
                     followup_3_sent_at=now,
                     last_action_at=now,
+                    next_dm_attempt_at=None,
                 )
             record_action_executed(conn, account.account_id, "dm")
             record_sent_message(conn, account.account_id, body, strategy)

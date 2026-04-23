@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiGet } from '../api'
 import type { LeadRow, Paginated } from '../types'
+
+function actionStatusClass(st: string | null | undefined): string {
+  const s = (st || '').toLowerCase()
+  if (s === 'ok') return 'action-ok'
+  if (s === 'error') return 'action-error'
+  if (s === 'skipped') return 'action-skipped'
+  return ''
+}
 
 export function Automation() {
   const [page, setPage] = useState(1)
@@ -37,7 +46,13 @@ export function Automation() {
         <h2>Phantombuster activity</h2>
         <p className="muted">
           Rows from <code>action_log</code>: every connect / DM attempt (including dry-run and
-          skips).
+          skips). <strong>Status</strong> colors: <span className="badge">ok</span> success,{' '}
+          <span className="badge" style={{ background: 'rgba(30, 58, 138, 0.5)' }}>
+            skipped
+          </span>{' '}
+          expected (validation / Phantombuster dedupe &quot;already processed&quot;),{' '}
+          <span className="badge" style={{ background: 'rgba(127, 29, 29, 0.4)' }}>error</span>{' '}
+          failed. <Link to="/leads">Import leads (CSV)</Link> on the Leads page.
         </p>
         <div className="filters">
           <input
@@ -91,13 +106,13 @@ export function Automation() {
                 <th>Account</th>
                 <th>Lead</th>
                 <th>Detail</th>
-                <th>Phantombuster API Error</th>
+                <th>Phantombuster result / log</th>
                 <th>Note preview</th>
               </tr>
             </thead>
             <tbody>
               {data?.items.map((row) => (
-                <tr key={String(row.id)}>
+                <tr key={String(row.id)} className={actionStatusClass(row.status as string | undefined)}>
                   <td className="mono small">{String(row.created_at || '')}</td>
                   <td>
                     <span className="badge">{String(row.action_type || '')}</span>

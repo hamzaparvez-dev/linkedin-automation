@@ -20,7 +20,6 @@ _LI_PATH = re.compile(
 _IN_PATH = re.compile(r"^https://www\.linkedin\.com/in/[^/?#\s]+$", re.IGNORECASE)
 
 _SINGULAR_ARG_KEYS = frozenset({"profileUrl", "numberOfAddsPerLaunch", "message"})
-_MAX_CONNECT_MESSAGE_LEN = 300  # Phantom: message length must be < 300 characters
 
 
 def normalize_engagement_linkedin_url(raw: Optional[str]) -> Optional[str]:
@@ -239,7 +238,12 @@ def _validate_array(argument: dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
-def _validate_singular(argument: dict[str, Any], *, session_via_bonus: bool = False) -> tuple[bool, str]:
+def _validate_singular(
+    argument: dict[str, Any],
+    *,
+    session_via_bonus: bool = False,
+    max_message_len: int,
+) -> tuple[bool, str]:
     allowed = set(_SINGULAR_ARG_KEYS)
     if not session_via_bonus:
         allowed |= {"sessionCookie", "userAgent"}
@@ -270,8 +274,8 @@ def _validate_singular(argument: dict[str, Any], *, session_via_bonus: bool = Fa
     msg = argument.get("message")
     if not isinstance(msg, str) or not msg.strip():
         return False, "message_empty"
-    if len(msg) >= _MAX_CONNECT_MESSAGE_LEN:
-        return False, f"message_too_long_max_{_MAX_CONNECT_MESSAGE_LEN - 1}_chars"
+    if len(msg) > max_message_len:
+        return False, f"message_too_long_max_{max_message_len}_chars"
     if not session_via_bonus:
         sc = argument.get("sessionCookie")
         if not isinstance(sc, str) or len(sc.strip()) < 50:
@@ -286,9 +290,18 @@ def validate_engagement_argument(
     argument: dict[str, Any],
     *,
     bonus_argument: Optional[dict[str, Any]] = None,
+    max_message_chars: Optional[int] = None,
 ) -> tuple[bool, str]:
-    """Validate argument for the configured mode (singular profileUrl vs array profileUrls)."""
-    from config import PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
+    """Validate argument for the configured mode (singular profileUrl vs array profileUrls).
+
+    For singular `message`, length must be `<= max_message_chars` (default: `MAX_PHANTOM_DM_MESSAGE_CHARS`
+    in config). Use `max_message_chars=MAX_CONNECT_NOTE_CHARS` for connection requests.
+    """
+    from config import MAX_PHANTOM_DM_MESSAGE_CHARS, PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
+
+    mlen = MAX_PHANTOM_DM_MESSAGE_CHARS if max_message_chars is None else int(max_message_chars)
+    if mlen < 1:
+        mlen = MAX_PHANTOM_DM_MESSAGE_CHARS
 
     if not isinstance(argument, dict):
         return False, "argument_not_object"
@@ -298,9 +311,9 @@ def validate_engagement_argument(
             return False, msg_b
         if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE != "singular":
             return False, "bonus_argument_only_supported_for_singular_profile_mode"
-        return _validate_singular(argument, session_via_bonus=True)
+        return _validate_singular(argument, session_via_bonus=True, max_message_len=mlen)
     if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE == "singular":
-        return _validate_singular(argument)
+        return _validate_singular(argument, max_message_len=mlen)
     return _validate_array(argument)
 
 
@@ -378,3 +391,109 @@ def summarize_phantom_result(result: dict[str, Any], *, max_len: int = 900) -> s
         raw = str(result)[:max_len]
     s = " | ".join(parts) + " | " + raw
     return s[:max_len]
+
+
+def _flatten_outcome_to_search_text(
+    result: Optional[dict[str, Any]],
+    fetch_output_rows: Optional[list[dict[str, Any]]] = None,
+) -> str:
+    """Lowercase text blob for dedupe heuristics (result object + tabular output rows)."""
+    parts: list[str] = []
+    if isinstance(result, dict):
+        for key in ("message", "error", "output", "returnMessage", "returnCode", "returnValue"):
+            v = result.get(key)
+            if v is not None and str(v).strip():
+                parts.append(str(v))
+        try:
+            parts.append(json.dumps(result, default=str))
+        except (TypeError, ValueError):
+            parts.append(str(result))
+    for row in fetch_output_rows or ():
+        if isinstance(row, dict):
+            for v in row.values():
+                if v is not None and str(v).strip():
+                    parts.append(str(v))
+        else:
+            parts.append(str(row))
+    return " ".join(parts).lower()
+
+
+# Phantombuster / LinkedIn Auto may exit status=finished while skipping the line
+# (phantom "memory" or spreadsheet dedupe). These substrings are logged in that case.
+_INPUT_ALREADY_PROCESSED_PHRASES: tuple[str, ...] = (
+    "input already processed",
+    "this input was already processed",
+    "this line was already processed",
+    "row already processed",
+    "line already processed",
+    "profile already processed",
+    "was already in the",
+    "duplicate line",
+    "duplicated input",
+    "éjà traité",  # FR locale logs
+    "déjà traité",
+)
+
+
+def phantom_outcome_suggests_cannot_message_not_first_degree(
+    result: Optional[dict[str, Any]],
+    *,
+    fetch_output_rows: Optional[list[dict[str, Any]]] = None,
+) -> bool:
+    """
+    LinkedIn / DM phantom finished but the prospect is not 1st-degree (invite pending or not accepted).
+    """
+    blob = _flatten_outcome_to_search_text(result, fetch_output_rows)
+    needles = (
+        "not a 1st degree",
+        "not 1st degree",
+        "first degree connection",
+        "1st degree connection",
+        "only your 1st",
+        "out of network",
+        "cannot send message",
+        "cannot message",
+        "messaging is not available",
+        "isn't in your network",
+        "is not in your network",
+        "ne pouvez pas envoyer",  # FR
+    )
+    return any(n in blob for n in needles)
+
+
+def phantom_outcome_suggests_input_already_processed(
+    result: Optional[dict[str, Any]],
+    *,
+    fetch_output_rows: Optional[list[dict[str, Any]]] = None,
+) -> bool:
+    """
+    True if Phantombuster / phantom logs indicate the profile/line was skipped as already processed
+    (no new LinkedIn action), while the container may still return status=finished.
+    """
+    blob = _flatten_outcome_to_search_text(result, fetch_output_rows)
+    for phrase in _INPUT_ALREADY_PROCESSED_PHRASES:
+        if phrase in blob:
+            return True
+    # "already processed" can appear in benign contexts; require proximity to input/line/duplicate
+    if "already processed" in blob:
+        if "input" in blob or "line" in blob or "duplicate" in blob or "profile" in blob:
+            return True
+    return False
+
+
+def append_fetch_output_to_summary(
+    summary: str,
+    fetch_output_rows: Optional[list[dict[str, Any]]],
+    *,
+    max_len: int = 600,
+) -> str:
+    """Append a short JSON snippet of fetch_output rows to phantom_response for operator debugging."""
+    if not fetch_output_rows:
+        return summary
+    try:
+        snip = json.dumps(fetch_output_rows, ensure_ascii=False, default=str)[:max_len]
+    except (TypeError, ValueError):
+        snip = str(fetch_output_rows)[:max_len]
+    if not (summary and summary.strip()):
+        return "fetch_output=" + snip
+    return (summary + " | fetch_output=" + snip)[: max_len + 200]

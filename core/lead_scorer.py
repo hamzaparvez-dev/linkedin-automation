@@ -17,6 +17,7 @@ import csv
 import os
 import logging
 from config import (
+    APIFY_IMPORT_FLOOR_SCORE,
     ICP_INDUSTRY_KEYWORDS,
     SCORING_RULES,
     MIN_SCORE_THRESHOLD,
@@ -79,6 +80,11 @@ class LeadScorer:
         if is_icp:
             score += SCORING_RULES["icp_match"]
             breakdown["icp_match"] = SCORING_RULES["icp_match"]
+
+        if APIFY_IMPORT_FLOOR_SCORE > 0 and not (lead.get("apollo_person_id") or "").strip():
+            if score < APIFY_IMPORT_FLOOR_SCORE:
+                score = APIFY_IMPORT_FLOOR_SCORE
+                breakdown["apify_import_floor"] = APIFY_IMPORT_FLOOR_SCORE
 
         lead["score"] = score
         lead["score_breakdown"] = breakdown

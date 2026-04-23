@@ -241,11 +241,17 @@ def run_daily_automation(
             except Exception:
                 logger.exception("Apollo Web3 step failed; continuing with CSV / DB steps")
 
-        _refresh_lookup_merge()
+        if not _env_bool("DAILY_SKIP_MERGED_CSV", "false"):
+            _refresh_lookup_merge()
+        else:
+            logger.info("DAILY_SKIP_MERGED_CSV: skip export_lookup_csv merge step")
 
         conn = get_connection()
         try:
-            import_merged_lookup_csv(conn, MERGED_CSV, campaign_id=doc.campaign_id)
+            if not _env_bool("DAILY_SKIP_MERGED_CSV", "false"):
+                import_merged_lookup_csv(conn, MERGED_CSV, campaign_id=doc.campaign_id)
+            else:
+                logger.info("DAILY_SKIP_MERGED_CSV: skip merged lookup CSV import")
 
             if not _env_bool("DAILY_SKIP_PB_PROFILE", "false"):
                 cap = _env_int("DAILY_PB_ENRICH_MAX", 40)

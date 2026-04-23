@@ -151,6 +151,8 @@ def _migrate_leads_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE leads ADD COLUMN followup_2_sent_at TEXT")
     if cols and "followup_3_sent_at" not in cols:
         conn.execute("ALTER TABLE leads ADD COLUMN followup_3_sent_at TEXT")
+    if cols and "next_dm_attempt_at" not in cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN next_dm_attempt_at TEXT")
 
 
 def _migrate_action_log_columns(conn: sqlite3.Connection) -> None:

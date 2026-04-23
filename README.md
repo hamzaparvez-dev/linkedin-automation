@@ -147,6 +147,10 @@ Adjust path, user, and logging directory. Load the same environment as manual ru
 
 > **Note:** `ecosystem.config.js` currently runs **engagement-only**. The **full daily pipeline** (Apollo + merge + enrich + assign + engagement) is **`python main.py --daily-automation`** — wire **cron** or **separate PM2 app** for that if engagement PM2 alone is not sufficient for your agency workflow.
 
+**Apify / dashboard-only leads (no Apollo merge file):** set `DAILY_SKIP_APOLLO=true` and `DAILY_SKIP_MERGED_CSV=true` so the run relies on leads already in SQLite (e.g. from `POST /api/leads/import`). Use `APIFY_IMPORT_FLOOR_SCORE` (same value as `MIN_SCORE_THRESHOLD` is typical) so dashboard imports can become `QUALIFIED` without full enrichment. **First DMs** do not require a separate “connections export” Phantombuster: after **`OPTIMISTIC_FIRST_DM_DAYS`**, the DM phantom may be sent while the lead is still **INVITED**; if the phantom output says not 1st degree / cannot message, the app logs `skipped` (`pb_not_connected_yet`), sets `next_dm_attempt_at` using **`DM_NOT_CONNECTED_COOLDOWN_DAYS`**, and retries later.
+
+**Phantombuster “input already processed”:** when the connect/DM phantom skips a line (dedupe memory) but the container still finishes, the app logs `action_log.status=skipped` and does **not** mark the connect as sent or move the lead to `INVITED`.
+
 ---
 
 ## 1. Executive summary
@@ -160,7 +164,7 @@ Build a **multi-account, low-risk** LinkedIn automation system that:
 5. Uses **controlled AI-assisted** personalization (not fully autonomous AI)
 6. **Tracks replies**, conversations, and outcomes for **campaign intelligence**
 
-**Outbound messaging flow (implemented):** Connect (LLM + validation) → first DM on **day 1** after accept (≥ **`FOLLOW_UP_SCHEDULE["dm"]`** calendar day from `connected_at`) → follow-up 1 / 2 / 3 on timeline days **`followup_1` / `followup_2` / `followup_3`** from **`FOLLOW_UP_SCHEDULE`** (default **3 / 6 / 11** from connection, i.e. **2 / 3 / 5** calendar days after the prior outbound in the chain). Inbound replies are **classified only** (`python main.py --ingest-reply …`); **no** LinkedIn auto-reply in this phase—humans respond.
+**Outbound messaging flow (implemented):** Connect (LLM + ≤200 char validation) → first DM when **`FOLLOW_UP_SCHEDULE["dm"]`** calendar day has elapsed (from `connected_at` or, for **INVITED** leads, optimistic timing from `invited_at` / `assigned_at` per the runner) → follow-up 1 / 2 / 3 on **`FOLLOW_UP_SCHEDULE`** (default from accept/invite: **1 / 3 / 6 / 10** calendar day offsets, i.e. **+0 / +2 / +3 / +4** calendar day gaps after the **previous** outbound in the chain). Inbound replies are **classified only** (`python main.py --ingest-reply …`); **no** LinkedIn auto-reply in this phase—humans respond.
 
 Third-party outreach SaaS (e.g. Expandi, Waalaxy) and separate enrichment vendors (e.g. Clay) are **not required** in the target architecture: **Apollo** + **Phantombuster** + **first-party Core / AI / Storage** layers are sufficient when implemented to this spec.
 
@@ -324,11 +328,12 @@ stateDiagram-v2
   ENRICHED --> QUALIFIED: score meets threshold
   QUALIFIED --> ASSIGNED_TO_ACCOUNT: exclusive account
   ASSIGNED_TO_ACCOUNT --> INVITED: connect sent
-  INVITED --> CONNECTED: accepted
-  CONNECTED --> MESSAGED: first DM (day 1)
-  MESSAGED --> FOLLOW_UP_1: day 3 no reply
-  FOLLOW_UP_1 --> FOLLOW_UP_2: day 6 no reply
-  FOLLOW_UP_2 --> FOLLOW_UP_3: day 11 no reply
+  INVITED --> CONNECTED: optional manual promote / other signal
+  INVITED --> MESSAGED: first DM (optimistic path, day 1+)
+  CONNECTED --> MESSAGED: first DM
+  MESSAGED --> FOLLOW_UP_1: day+3 (no reply)
+  FOLLOW_UP_1 --> FOLLOW_UP_2: day+6
+  FOLLOW_UP_2 --> FOLLOW_UP_3: day+10
   MESSAGED --> REPLIED: inbound message
   FOLLOW_UP_1 --> REPLIED: inbound message
   FOLLOW_UP_2 --> REPLIED: inbound message
@@ -614,7 +619,7 @@ Outputs: **operations dashboard** (see below) + **exportable aggregates** (CSV/J
 | Command | Purpose |
 |---------|---------|
 | `--full-run` | Apollo discovery → enrichment → score → assign → queue |
-| `--daily-automation` | Web3 Apollo scrape → merged CSV → SQLite import → capped PB profile enrich → score → assign → engagement (`DAILY_*` env; use with cron or `--schedule`) |
+| `--daily-automation` | Pipeline: optional Apollo (`DAILY_SKIP_APOLLO`) → optional merged CSV import (`DAILY_SKIP_MERGED_CSV`) → optional PB profile enrich → score → assign → engagement (`DAILY_*` / `APIFY_IMPORT_FLOOR_SCORE`; use with cron or `--schedule`) |
 | `--engagement-only` | Behavior controller + Phantombuster actions from current state |
 | `--multi-account-run` | Engagement across all configured accounts in one supervised run |
 | `--dry-run` | Plan actions; no PB launch (overrides env `DRY_RUN`) |
@@ -696,7 +701,11 @@ Two gate layers exist:
 | `DAILY_LIMITS` | Per action type; may be JSON per account |
 | `DELAY_RANGE` | e.g. `30-180` seconds |
 | `MESSAGE_STRATEGY` | Default per account + rotation policy |
-| `FOLLOW_UP_SCHEDULE` | JSON object: timeline day offsets from connection, keys `dm`, `followup_1`, `followup_2`, `followup_3` (default `{"dm":1,"followup_1":3,"followup_2":6,"followup_3":11}`) |
+| `FOLLOW_UP_SCHEDULE` | JSON: day offsets from accept/optimistic start — `dm`, `followup_1`, `followup_2`, `followup_3` (default `{"dm":1,"followup_1":3,"followup_2":6,"followup_3":10}`); gaps for eligibility are derived in `config.follow_up_eligibility_gaps()` |
+| `OPTIMISTIC_FIRST_DM_DAYS` | Minimum full calendar days before a first DM may be attempted for **INVITED** leads (default 1) |
+| `DM_NOT_CONNECTED_COOLDOWN_DAYS` | When PB cannot message (not 1st degree), retry after this many full calendar days (`leads.next_dm_attempt_at`) |
+| `HARD_CAP_CONNECT` / `HARD_CAP_DM` | Global daily ceilings vs `steady_daily_limits` in `config/accounts.json` (defaults 60 / 100) |
+| `config/accounts.json` `profile_name` | Optional human label per identity (e.g. for logs / ops) |
 | Apollo / Phantombuster keys | As in `.env.example` |
 
 ---
@@ -748,13 +757,13 @@ Success is measured by **conversation quality and account safety**, not raw send
 | Full pipeline v2 | §1 | `core/pipeline.py`, default `python main.py` |
 | CLI (§18) | §18 | `--engagement-only`, `--multi-account-run`, `--dry-run`, `--resume`, `--promote-connected`, `--intelligence-export`, `--ingest-reply` |
 | Strict ICP outreach export | §18.2 | `lead_extraction/outreach_ready_filter.py`, `scripts/export_icp_outreach_csv.py`; optional `APOLLO_WEB3_STRICT_OUTREACH` in `lead_extraction/pipeline.py` |
-| Follow-up sequence (days 3 / 6 / 11) | §8.3 | `core/engagement_runner.py` — `FOLLOW_UP_SCHEDULE` / `follow_up_eligibility_gaps()`; states through `FOLLOW_UP_3` |
+| Follow-up sequence (gaps +2 / +3 / +4 from prior send; timeline 1 / 3 / 6 / 10) | §8.3 | `core/engagement_runner.py` — `FOLLOW_UP_SCHEDULE` / `follow_up_eligibility_gaps()`; states through `FOLLOW_UP_3` |
 | Inbound classification (no auto-reply) | §11 | `core/repository.ingest_inbound_reply`, `core/reply_handler.classify_reply_auto`, `main.py --ingest-reply` |
 | Legacy Clay / Expandi | Appendix B | `main.py --legacy-full` (optional) |
 
-**Setup:** `cp config/accounts.example.json config/accounts.json` and set per-account Phantombuster agent IDs (or global `PHANTOMBUSTER_*_AGENT_ID` in `.env`). After a connection is accepted in LinkedIn, run `python main.py --promote-connected <lead_id>` so first DM can fire per §8.2.
+**Setup:** `cp config/accounts.example.json config/accounts.json` and set per-account Phantombuster agent ids (or global `PHANTOMBUSTER_*_AGENT_ID` in `.env`), `linkedin_profile` (session cookie), and optional `profile_name`. The optimistic **INVITED** first-DM path means you do not need a separate “connections list export” phantom; you may still run `python main.py --promote-connected <lead_id>` to mark a lead **CONNECTED** when you want that state in the database.
 
-Engineering should keep this README as the **source of truth**; optional inbox **sync** phantoms can be added later without changing the human-only reply policy above.
+Engineering should keep this README as the **source of truth** for the human-only reply policy and engagement caps above.
 
 ---
 

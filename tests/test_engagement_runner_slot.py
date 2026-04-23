@@ -31,6 +31,7 @@ def _account(**kwargs: object) -> AccountConfig:
         weekend_actions=False,
         phantombuster_connect_agent_id="111",
         phantombuster_dm_agent_id="222",
+        profile_name="",
     )
     base.update(kwargs)
     return AccountConfig(**base)  # type: ignore[arg-type]
@@ -69,6 +70,7 @@ class TestEngagementRunnerSlot(unittest.TestCase):
             conn.execute.return_value = cur
             pb = MagicMock()
             pb.run_agent.return_value = ({"status": "finished"}, "cid-1")
+            pb.fetch_output.return_value = []
             ores = OutreachResult(text="Hi", source="test", raw_llm_snippet="")
             with (
                 patch("core.engagement_runner.approve_action") as m_appr,

@@ -27,6 +27,7 @@ class AccountConfig:
     weekend_actions: bool
     phantombuster_connect_agent_id: str
     phantombuster_dm_agent_id: str
+    profile_name: str
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,7 @@ def load_accounts_document(path: str) -> AccountsDocument:
                 phantombuster_dm_agent_id=str(
                     a.get("phantombuster_dm_agent_id") or ""
                 ).strip(),
+                profile_name=str(a.get("profile_name") or "").strip(),
             )
         )
     logger.info("Loaded %d account(s) for campaign %s", len(accounts), campaign_id)

@@ -11,7 +11,14 @@ from typing import Any, Literal, Optional
 
 import requests
 
-from config import OPEN_ROUTER_API_KEY, OPEN_ROUTER_BASE_URL, OPEN_ROUTER_MODEL
+from config import (
+    MAX_CONNECT_NOTE_CHARS,
+    MAX_CONNECT_NOTE_WORDS,
+    MAX_DM_WORDS,
+    OPEN_ROUTER_API_KEY,
+    OPEN_ROUTER_BASE_URL,
+    OPEN_ROUTER_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,49 +26,47 @@ OutreachStage = Literal["connect", "dm", "followup_1", "followup_2", "followup_3
 ReplyLabel = Literal["positive", "neutral", "negative", "complex"]
 
 
-OUTREACH_SYSTEM_PROMPT = """You are a Web3 founder sending LinkedIn outreach.
+OUTREACH_SYSTEM_PROMPT = f"""You are a Web3 founder doing LinkedIn outreach. Produce fully personalized
+copy: vary wording for every lead, grounded in the facts in the user message. Never paste a template
+line verbatim. Sound like a peer, not a vendor.
 
-Write short, natural messages.
-Do NOT sound like sales.
-Do NOT use buzzwords.
-Do NOT pitch services.
+Do NOT: pitch services, use buzzword stacks, or phrases like "we help", "book a call", "our team", or
+"free consultation". No URLs or http(s) in any stage.
 
-Rules:
-- Max 20 words (connect)
-- Max 25 words (DM / follow-up)
-- No links
-- No emojis
-- No long sentences
-- One idea only
+Output limits (strict):
+- Connect note: at most {MAX_CONNECT_NOTE_WORDS} words AND at most {MAX_CONNECT_NOTE_CHARS} characters
+  (including spaces). No emojis in the connection note.
+- First DM, follow-up 1, follow-up 2, follow-up 3: at most {MAX_DM_WORDS} words each. No emojis
+  in DM, FU1, or FU2. For follow-up 3 only, you may optionally add a single 👍 as the very last
+  character (no other emojis in that message).
 
-Tone:
-- casual
-- curious
-- peer-to-peer
-
-Goal:
-Start a conversation, not sell."""
+The user message lists the lead (first name, company, segment) and the stage-specific structure
+to follow. Return only the message text for the requested stage — no quotes, no labels, no preface.
+"""
 
 _STAGE_INSTRUCTIONS: dict[str, str] = {
     "connect": (
-        "Stage CONNECT: ask to connect; mention the company or their space. "
-        "No question required. Output only the connection note text, nothing else."
+        "Stage CONNECT. Structure: greet with {first_name}; tie one concrete reason to {company} or their "
+        "space in {segment}; end with a natural link-request (peer-to-peer, under the character and word caps). "
+        "Output only the connection note, nothing else."
     ),
     "dm": (
-        "Stage DM: one simple question; focus on growth or product. "
-        "Output only the DM text, nothing else."
+        "Stage DM (message 1, after they accept). Structure: {first_name}; one line of context on "
+        "why {company} / {segment} is interesting to you; one short, open question to start a real conversation. "
+        "Output only the DM, nothing else."
     ),
     "followup_1": (
-        "Stage FOLLOWUP_1: light nudge; refer to having reached out before; no pressure. "
-        "Output only the message text, nothing else."
+        "Stage FOLLOWUP_1. Structure: {first_name}; brief, friendly bump referencing your earlier note; "
+        "one low-pressure line related to {company} or {segment}. Output only the message, nothing else."
     ),
     "followup_2": (
-        "Stage FOLLOWUP_2: another light check-in; still casual; not the last message in the sequence. "
-        "Output only the message text, nothing else."
+        "Stage FOLLOWUP_2. Structure: {first_name}; another light check-in; you are not closing the thread yet. "
+        "Tie to {company} or {segment} if natural. Output only the message, nothing else."
     ),
     "followup_3": (
-        "Stage FOLLOWUP_3: absolute final message; polite soft close (e.g. should I assume no interest?). "
-        "Output only the message text, nothing else."
+        "Stage FOLLOWUP_3 (last touch). Structure: {first_name}; clear, polite last note — e.g. assume "
+        "bad timing, offer to close the loop, or ask if a quick response is still worth it. You may add "
+        "a single optional 👍 as the final character. Output only the message, nothing else."
     ),
 }
 
@@ -69,15 +74,15 @@ _STAGE_INSTRUCTIONS: dict[str, str] = {
 _FALLBACK: dict[tuple[str, str], list[str]] = {
     ("connect", "direct"): [
         "Hi {first_name}, saw your work at {company} — would be good to connect.",
-        "Hi {first_name}, building in {signal} too. Happy to connect.",
+        "Hi {first_name}, building in {segment} too. Happy to connect.",
     ],
     ("connect", "curiosity"): [
-        "Hi {first_name}, came across {company} in {signal} — would love to connect.",
+        "Hi {first_name}, came across {company} in {segment} — would love to connect.",
         "Hi {first_name}, curious about what you're building at {company}. Open to connect?",
     ],
     ("connect", "value"): [
-        "Hi {first_name}, noticed {company} in {signal} — thought a peer connect made sense.",
-        "Hi {first_name}, {signal} founder here — would enjoy connecting.",
+        "Hi {first_name}, noticed {company} in {segment} — thought a peer connect made sense.",
+        "Hi {first_name}, {segment} founder here — would enjoy connecting.",
     ],
     ("dm", "direct"): [
         "Hey {first_name}, are you focused more on growth or product at {company} right now?",
@@ -160,7 +165,7 @@ def _normalize_strategy(strategy: str) -> str:
 
 
 def _max_words_for_stage(stage: OutreachStage) -> int:
-    return 20 if stage == "connect" else 25
+    return MAX_CONNECT_NOTE_WORDS if stage == "connect" else MAX_DM_WORDS
 
 
 def _has_emoji(s: str) -> bool:
@@ -173,6 +178,20 @@ def _has_emoji(s: str) -> bool:
         except ValueError:
             continue
     return False
+
+
+def _emoji_violates_stage_policy(s: str, stage: OutreachStage) -> bool:
+    """Rejects emojis; followup_3 may use a single optional trailing 👍 only (no other emojis)."""
+    t = s.strip()
+    if not t:
+        return False
+    if stage != "followup_3":
+        return _has_emoji(t)
+    rest = t.rstrip()
+    if rest.endswith("👍"):
+        rest = rest[: -1].rstrip()
+        return _has_emoji(rest)
+    return _has_emoji(t)
 
 
 def _has_link_like(s: str) -> bool:
@@ -197,11 +216,13 @@ def validate_outreach_plaintext(
     words = t.split()
     if len(words) > mw:
         return False, "too_long"
+    if stage == "connect" and len(t) > MAX_CONNECT_NOTE_CHARS:
+        return False, "too_many_chars"
     if _has_link_like(t):
         return False, "link"
     if _SALES_BANNED.search(t):
         return False, "sales_language"
-    if _has_emoji(t):
+    if _emoji_violates_stage_policy(t, stage):
         return False, "emoji"
     ok, reason = validate_message(t, max_words=mw, recent_bodies=recent_bodies, max_url_count=0)
     if not ok:
@@ -213,7 +234,9 @@ def _fallback_body(stage: OutreachStage, strategy: str, lead: dict[str, Any]) ->
     strat = _normalize_strategy(strategy)
     first = (lead.get("first_name") or lead.get("full_name") or "there").split()[0]
     company = lead.get("company_name") or "your company"
-    signal = industry_signal(lead)
+    segment = (str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "Web3").strip()
+    if not segment:
+        segment = "Web3"
     key = (stage, strat)
     pool = _FALLBACK.get(key) or _FALLBACK.get((stage, "direct")) or [
         "Hi {first_name}, would be great to connect."
@@ -221,7 +244,7 @@ def _fallback_body(stage: OutreachStage, strategy: str, lead: dict[str, Any]) ->
     import random
 
     tpl = random.choice(pool)
-    return tpl.format(first_name=first, company=company, signal=signal)
+    return tpl.format(first_name=first, company=company, segment=segment)
 
 
 def _build_user_prompt(
@@ -233,15 +256,20 @@ def _build_user_prompt(
 ) -> str:
     first = (lead.get("first_name") or lead.get("full_name") or "there").split()[0]
     company = lead.get("company_name") or "your company"
-    industry_signal_val = lead.get("industry_signal") or industry_signal(lead)
+    seg = (str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "Web3").strip()
+    if not seg:
+        seg = "Web3"
     strat = _normalize_strategy(strategy)
+    stage_brief = _STAGE_INSTRUCTIONS[stage].format(
+        first_name=first, company=company, segment=seg
+    )
     base = (
         f"Name: {first}\n"
         f"Company: {company}\n"
-        f"Industry: {industry_signal_val}\n"
+        f"Segment: {seg}\n"
         f"Stage: {stage}\n"
         f"Strategy: {strat}\n\n"
-        f"{_STAGE_INSTRUCTIONS[stage]}"
+        f"{stage_brief}"
     )
     if regen_hint:
         base += f"\n\nYour previous reply was invalid: {regen_hint}. Rewrite fully."
@@ -293,7 +321,7 @@ def generate_outreach_message(
                 {"role": "system", "content": OUTREACH_SYSTEM_PROMPT},
                 {"role": "user", "content": user},
             ],
-            max_tokens=100 if stage == "connect" else 120,
+            max_tokens=100 if stage == "connect" else 500,
         )
 
     text = _one_call()

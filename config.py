@@ -64,6 +64,11 @@ PHANTOMBUSTER_DWELL_TIME = os.getenv("PHANTOMBUSTER_DWELL_TIME", "true").strip()
     "yes",
     "on",
 )
+# First DM after invite (Connect + DM phantoms only; no list-export sync slot)
+OPTIMISTIC_FIRST_DM_DAYS = int((os.getenv("OPTIMISTIC_FIRST_DM_DAYS", "1") or "1").strip() or 1)
+DM_NOT_CONNECTED_COOLDOWN_DAYS = int(
+    (os.getenv("DM_NOT_CONNECTED_COOLDOWN_DAYS", "2") or "2").strip() or 2
+)
 
 # ─── Legacy outreach (off by default, PRD v2) ─────────────────────────────────
 WAALAXY_API_KEY = os.getenv("WAALAXY_API_KEY", "")
@@ -77,21 +82,20 @@ ENABLE_LEGACY_OUTREACH = os.getenv("ENABLE_LEGACY_OUTREACH", "false").lower() in
 )
 
 # ─── Behavior & safety (PRD §7, §15) ───────────────────────────────────────────
-HARD_CAP_CONNECT = int(os.getenv("HARD_CAP_CONNECT", "40"))
-HARD_CAP_DM = int(os.getenv("HARD_CAP_DM", "30"))
+HARD_CAP_CONNECT = int(os.getenv("HARD_CAP_CONNECT", "60"))
+HARD_CAP_DM = int(os.getenv("HARD_CAP_DM", "100"))
 HARD_CAP_REPLY = int(os.getenv("HARD_CAP_REPLY", "20"))
 BURST_WINDOW_MINUTES = int(os.getenv("BURST_WINDOW_MINUTES", "15"))
 BURST_MAX_ACTIONS = int(os.getenv("BURST_MAX_ACTIONS", "8"))
 DM_DELAY_MIN_HOURS = int(os.getenv("DM_DELAY_MIN_HOURS", "24"))
 DM_DELAY_MAX_HOURS = int(os.getenv("DM_DELAY_MAX_HOURS", "72"))
 
-# Timeline day offsets from connection (Day 1 = first DM). Gaps between stages are derived:
-# FU1 after dm: followup_1 - dm; FU2 after FU1: followup_2 - followup_1; FU3 after FU2: followup_3 - followup_2.
+# Day offsets from connection/accept: Msg1 +1, FU1 +3, FU2 +6, FU3 +10
 _DEFAULT_FOLLOW_UP_SCHEDULE: dict[str, int] = {
     "dm": 1,
     "followup_1": 3,
     "followup_2": 6,
-    "followup_3": 11,
+    "followup_3": 10,
 }
 
 
@@ -168,8 +172,12 @@ elif _oi_key:
     OPEN_ROUTER_BASE_URL = "https://api.openai.com/v1"
 else:
     OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-MAX_DM_WORDS = int(os.getenv("MAX_DM_WORDS", "40"))
-MAX_CONNECT_NOTE_WORDS = int(os.getenv("MAX_CONNECT_NOTE_WORDS", "25"))
+MAX_DM_WORDS = int(os.getenv("MAX_DM_WORDS", "180"))
+MAX_CONNECT_NOTE_WORDS = int(os.getenv("MAX_CONNECT_NOTE_WORDS", "200"))
+# Connect note: hard limit for Phantombuster + UI (under 200 chars in product spec)
+MAX_CONNECT_NOTE_CHARS = int(os.getenv("MAX_CONNECT_NOTE_CHARS", "200"))
+# Singular Phantombuster "message" field: LinkedIn DMs support long text; this caps payload size in validation.
+MAX_PHANTOM_DM_MESSAGE_CHARS = int(os.getenv("MAX_PHANTOM_DM_MESSAGE_CHARS", "8000"))
 
 # ─── Apollo Search Filters ────────────────────────────────────────────────────
 INDUSTRY_KEYWORDS = ["Consulting", "Marketing", "SaaS", "Software", "Management Consulting"]
@@ -213,6 +221,11 @@ SCORING_RULES = {
     "icp_match": 2,
 }
 MIN_SCORE_THRESHOLD = int(os.getenv("MIN_SCORE_THRESHOLD", "6"))
+# If > 0, leads with no apollo_person_id (e.g. dashboard / Apify CSV) get at least this score
+# (when raw score is lower) so more become QUALIFIED. 0 = disabled.
+APIFY_IMPORT_FLOOR_SCORE = int(
+    (os.getenv("APIFY_IMPORT_FLOOR_SCORE", "0") or "0").strip() or 0
+)
 
 # ─── Legacy CSV paths (exports + compatibility) ────────────────────────────────
 RAW_LEADS_CSV = "output/1_raw_leads.csv"
@@ -243,7 +256,7 @@ def _truthy_env(name: str, default: str = "false") -> bool:
 DRY_RUN = _truthy_env("DRY_RUN", "false")
 LOG_DIR = Path(os.getenv("LOG_DIR", str(BASE_DIR / "logs")))
 # Max leads processed per account per connect (and per DM) pass when --max-leads is omitted.
-ENGAGEMENT_MAX_LEADS_PER_ACCOUNT = int(os.getenv("ENGAGEMENT_MAX_LEADS_PER_ACCOUNT", "50"))
+ENGAGEMENT_MAX_LEADS_PER_ACCOUNT = int(os.getenv("ENGAGEMENT_MAX_LEADS_PER_ACCOUNT", "20"))
 # If true and 2+ accounts share the same non-empty connect or DM agent id, abort engagement (misconfiguration).
 STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS = _truthy_env("STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS", "false")
 # If true, a connect/DM phantom failure whose logs look like an expired LinkedIn session sets accounts_meta.paused=1

@@ -6,12 +6,14 @@ import unittest
 
 import config as config_module
 from core.phantom_payload import (
+    append_fetch_output_to_summary,
     build_engagement_argument,
     looks_plausible_browser_user_agent,
     merge_phantom_launch_defaults,
     normalize_engagement_linkedin_url,
     normalize_session_cookie_for_bonus,
     phantom_failure_suggests_linkedin_session_issue,
+    phantom_outcome_suggests_input_already_processed,
     validate_engagement_argument,
     validate_phantom_bonus_argument,
 )
@@ -114,15 +116,31 @@ class TestPhantomPayload(unittest.TestCase):
         ok, msg = validate_engagement_argument(arg, bonus_argument=bonus)
         self.assertTrue(ok, msg)
 
-    def test_singular_rejects_message_300_chars_or_more(self) -> None:
+    def test_singular_rejects_message_over_default_max_chars(self) -> None:
+        from config import MAX_PHANTOM_DM_MESSAGE_CHARS
+
         arg = {
             "profileUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
-            "message": "x" * 300,
+            "message": "x" * (MAX_PHANTOM_DM_MESSAGE_CHARS + 1),
             "sessionCookie": _FAKE_SESSION,
             "userAgent": "Mozilla/5.0",
         }
         ok, msg = validate_engagement_argument(arg)
+        self.assertFalse(ok)
+        self.assertIn("message_too_long", msg)
+
+    def test_connect_note_respects_200_char_cap(self) -> None:
+        from config import MAX_CONNECT_NOTE_CHARS
+
+        arg = {
+            "profileUrl": "https://www.linkedin.com/in/foo",
+            "numberOfAddsPerLaunch": 1,
+            "message": "x" * (MAX_CONNECT_NOTE_CHARS + 1),
+            "sessionCookie": _FAKE_SESSION,
+            "userAgent": "Mozilla/5.0",
+        }
+        ok, msg = validate_engagement_argument(arg, max_message_chars=MAX_CONNECT_NOTE_CHARS)
         self.assertFalse(ok)
         self.assertIn("message_too_long", msg)
 
@@ -204,6 +222,22 @@ class TestPhantomPayload(unittest.TestCase):
             self.assertTrue(ok, msg)
         finally:
             config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "singular"
+
+    def test_phantom_dedupe_message_in_result(self) -> None:
+        r = {"status": "finished", "message": "Input already processed, skipping line 1."}
+        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
+        r2 = {"status": "finished", "message": "Connected successfully."}
+        self.assertFalse(phantom_outcome_suggests_input_already_processed(r2, fetch_output_rows=None))
+
+    def test_phantom_dedupe_in_fetch_output(self) -> None:
+        r = {"status": "finished"}
+        rows = [{"url": "https://www.linkedin.com/in/x", "message": "This line was already processed."}]
+        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=rows))
+
+    def test_append_fetch_output_to_summary(self) -> None:
+        s = append_fetch_output_to_summary("status=ok", [{"a": 1}])
+        self.assertIn("fetch_output=", s)
+        self.assertIn("1", s)
 
 
 if __name__ == "__main__":

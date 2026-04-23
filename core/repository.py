@@ -598,6 +598,23 @@ def append_message_history(
     conn.commit()
 
 
+def set_lead_next_dm_attempt_at(conn: sqlite3.Connection, lead_id: str, at_iso: Optional[str]) -> None:
+    """When set, do not try another DM for this lead until this UTC timestamp (optimistic / follow-up)."""
+    conn.execute(
+        "UPDATE leads SET next_dm_attempt_at=?, updated_at=? WHERE lead_id=?",
+        (at_iso, utc_now_iso(), lead_id),
+    )
+    conn.commit()
+
+
+def schedule_next_dm_retry_in_days(conn: sqlite3.Connection, lead_id: str, days: int) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    d = max(1, int(days))
+    at = (datetime.now(timezone.utc) + timedelta(days=d)).replace(microsecond=0).isoformat()
+    set_lead_next_dm_attempt_at(conn, lead_id, at)
+
+
 def transition_lead_status(conn: sqlite3.Connection, lead_id: str, new_status: str, **kwargs: Any) -> None:
     row = conn.execute("SELECT status FROM leads WHERE lead_id=?", (lead_id,)).fetchone()
     if not row:
@@ -616,6 +633,7 @@ def transition_lead_status(conn: sqlite3.Connection, lead_id: str, new_status: s
             "followup_1_sent_at",
             "followup_2_sent_at",
             "followup_3_sent_at",
+            "next_dm_attempt_at",
         ):
             fields.append(f"{k}=?")
             values.append(v)
