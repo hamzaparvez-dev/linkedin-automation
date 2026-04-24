@@ -17,6 +17,7 @@ from core.phantom_payload import (
     validate_engagement_argument,
     validate_phantom_bonus_argument,
 )
+from integrations.phantombuster_client import is_synthetic_polling_timeout_result, synthetic_polling_timeout_result
 
 _FAKE_SESSION = "AQED" + "x" * 100
 
@@ -238,6 +239,15 @@ class TestPhantomPayload(unittest.TestCase):
         s = append_fetch_output_to_summary("status=ok", [{"a": 1}])
         self.assertIn("fetch_output=", s)
         self.assertIn("1", s)
+
+    def test_synthetic_polling_timeout_roundtrip(self) -> None:
+        r = synthetic_polling_timeout_result("test-container-1")
+        self.assertTrue(is_synthetic_polling_timeout_result(r))
+        self.assertEqual(r.get("status"), "timeout")
+        self.assertEqual(r.get("_container_id"), "test-container-1")
+
+    def test_finished_is_not_synthetic_polling_timeout(self) -> None:
+        self.assertFalse(is_synthetic_polling_timeout_result({"status": "finished"}))
 
 
 if __name__ == "__main__":

@@ -10,11 +10,13 @@ from typing import Any, Optional
 
 from config import (
     ACCOUNT_CONFIG_PATH,
+    DEDUPE_CONNECT_ASSUME_INVITED,
     DM_NOT_CONNECTED_COOLDOWN_DAYS,
     ENGAGEMENT_AUTO_PAUSE_ACCOUNT_ON_PB_AUTH_FAILURE,
     ENGAGEMENT_MAX_LEADS_PER_ACCOUNT,
     MAX_CONNECT_NOTE_CHARS,
     OPTIMISTIC_FIRST_DM_DAYS,
+    PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES,
     PHANTOMBUSTER_CONNECT_AGENT_ID,
     PHANTOMBUSTER_DM_AGENT_ID,
     STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS,
@@ -57,7 +59,11 @@ from core.strategy_engine import (
     compose_from_template,
     pick_strategy,
 )
-from integrations.phantombuster_client import PhantombusterClient, format_phantom_api_error
+from integrations.phantombuster_client import (
+    PhantombusterClient,
+    format_phantom_api_error,
+    is_synthetic_polling_timeout_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -565,13 +571,29 @@ def _process_connects(
                 message=note,
             )
             is_dedupe_skip = False
+            is_poll_timeout = False
             try:
-                result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
-                raw_done, effective_ok, out_rows = _phantom_effective_outcome(pb, result, cid)
-                is_dedupe_skip = bool(raw_done and not effective_ok)
-                ok_pb = bool(effective_ok)
-                base_sum = summarize_phantom_result(result)
-                phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
+                result, cid = pb.run_agent(
+                    agent_id,
+                    arg,
+                    timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES,
+                    bonus_argument=bonus_arg,
+                )
+                is_poll_timeout = is_synthetic_polling_timeout_result(result)
+                if is_poll_timeout:
+                    ok_pb = False
+                    is_dedupe_skip = False
+                    raw_done = False
+                    effective_ok = False
+                    out_rows: list[dict[str, Any]] = []
+                    base_sum = summarize_phantom_result(result)
+                    phantom_summary = base_sum
+                else:
+                    raw_done, effective_ok, out_rows = _phantom_effective_outcome(pb, result, cid)
+                    is_dedupe_skip = bool(raw_done and not effective_ok)
+                    ok_pb = bool(effective_ok)
+                    base_sum = summarize_phantom_result(result)
+                    phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
                 _log_phantom_after(
                     "connect",
                     account_id=account.account_id,
@@ -587,9 +609,10 @@ def _process_connects(
                         lead_id,
                     )
                 logger.info(
-                    "Phantombuster connect finished=%s effective=%s container=%s account=%s lead=%s profile=%s",
+                    "Phantombuster connect finished=%s effective=%s poll_timeout=%s container=%s account=%s lead=%s profile=%s",
                     raw_done,
                     effective_ok,
+                    is_poll_timeout,
                     cid,
                     account.account_id,
                     lead_id,
@@ -598,6 +621,7 @@ def _process_connects(
             except Exception as e:
                 ok_pb = False
                 result = {}
+                is_poll_timeout = False
                 phantom_summary = format_phantom_api_error(e)
                 _log_phantom_after(
                     "connect",
@@ -614,7 +638,10 @@ def _process_connects(
                     lead_id,
                     linkedin_session,
                 )
-            if is_dedupe_skip:
+            if is_poll_timeout:
+                _conn_detail = "pb_polling_timeout|" + detail
+                _conn_status = "error"
+            elif is_dedupe_skip:
                 _conn_detail = "pb_dedupe_already_processed|" + detail
                 _conn_status = "skipped"
             elif ok_pb:
@@ -636,7 +663,7 @@ def _process_connects(
                 linkedin_session=linkedin_session,
                 phantom_response=_phantom_log(phantom_summary, ores),
             )
-            if not is_dedupe_skip and _maybe_auto_pause_account_on_pb_auth(
+            if not is_dedupe_skip and not is_poll_timeout and _maybe_auto_pause_account_on_pb_auth(
                 conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
             ):
                 break
@@ -659,6 +686,15 @@ def _process_connects(
                     1,
                 )
                 append_message_history(conn, lead_id, "outbound_connect", note)
+            elif is_dedupe_skip and DEDUPE_CONNECT_ASSUME_INVITED:
+                now = utc_now_iso()
+                transition_lead_status(
+                    conn,
+                    lead_id,
+                    "INVITED",
+                    invited_at=now,
+                    last_action_at=now,
+                )
 
         delay = random.randint(account.delay_min_sec, account.delay_max_sec)
         logger.debug("Post-connect delay %ss (account=%s)", delay, account.account_id)
@@ -798,31 +834,44 @@ def _process_dms(
             )
             is_dedupe_skip = False
             is_not_connected = False
+            is_poll_timeout = False
             try:
-                result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
-                raw_done = isinstance(result, dict) and result.get("status") == "finished"
-                out_rows: list[dict[str, Any]] = []
-                if raw_done and cid:
-                    try:
-                        out_rows = list(pb.fetch_output(cid) or [])
-                    except Exception as ex:
-                        logger.debug("Phantombuster fetch_output: %s", ex)
-                base_sum = summarize_phantom_result(result)
-                phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
-                is_not_connected = bool(
-                    raw_done
-                    and phantom_outcome_suggests_cannot_message_not_first_degree(
-                        result, fetch_output_rows=out_rows
-                    )
+                result, cid = pb.run_agent(
+                    agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=bonus_arg
                 )
-                is_dedupe_skip = bool(
-                    raw_done
-                    and not is_not_connected
-                    and phantom_outcome_suggests_input_already_processed(
-                        result, fetch_output_rows=out_rows
+                is_poll_timeout = is_synthetic_polling_timeout_result(result)
+                if is_poll_timeout:
+                    ok_pb = False
+                    is_dedupe_skip = False
+                    is_not_connected = False
+                    raw_done = False
+                    out_rows = []
+                    base_sum = summarize_phantom_result(result)
+                    phantom_summary = base_sum
+                else:
+                    raw_done = isinstance(result, dict) and result.get("status") == "finished"
+                    out_rows: list[dict[str, Any]] = []
+                    if raw_done and cid:
+                        try:
+                            out_rows = list(pb.fetch_output(cid) or [])
+                        except Exception as ex:
+                            logger.debug("Phantombuster fetch_output: %s", ex)
+                    base_sum = summarize_phantom_result(result)
+                    phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
+                    is_not_connected = bool(
+                        raw_done
+                        and phantom_outcome_suggests_cannot_message_not_first_degree(
+                            result, fetch_output_rows=out_rows
+                        )
                     )
-                )
-                ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
+                    is_dedupe_skip = bool(
+                        raw_done
+                        and not is_not_connected
+                        and phantom_outcome_suggests_input_already_processed(
+                            result, fetch_output_rows=out_rows
+                        )
+                    )
+                    ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
                 _log_phantom_after(
                     "dm",
                     account_id=account.account_id,
@@ -837,10 +886,11 @@ def _process_dms(
                 if is_dedupe_skip:
                     logger.info("Phantombuster first DM: dedupe/already processed lead=%s", lead_id)
                 logger.info(
-                    "Phantombuster DM finished=%s not_connected=%s ok=%s container=%s account=%s lead=%s",
+                    "Phantombuster DM finished=%s not_connected=%s ok=%s poll_timeout=%s container=%s account=%s lead=%s",
                     raw_done,
                     is_not_connected,
                     ok_pb,
+                    is_poll_timeout,
                     cid,
                     account.account_id,
                     lead_id,
@@ -850,6 +900,7 @@ def _process_dms(
                 result = {}
                 phantom_summary = format_phantom_api_error(e)
                 is_not_connected = False
+                is_poll_timeout = False
                 _log_phantom_after(
                     "dm",
                     account_id=account.account_id,
@@ -865,7 +916,10 @@ def _process_dms(
                     lead_id,
                     linkedin_session,
                 )
-            if is_not_connected:
+            if is_poll_timeout:
+                _dm_d = "first_dm:pb_polling_timeout|" + detail
+                _dm_st = "error"
+            elif is_not_connected:
                 _dm_d = "first_dm:pb_not_connected_yet|" + detail
                 _dm_st = "skipped"
             elif is_dedupe_skip:
@@ -892,8 +946,13 @@ def _process_dms(
             )
             if is_not_connected:
                 schedule_next_dm_retry_in_days(conn, lead_id, DM_NOT_CONNECTED_COOLDOWN_DAYS)
-            if not is_dedupe_skip and not is_not_connected and _maybe_auto_pause_account_on_pb_auth(
-                conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
+            if (
+                not is_dedupe_skip
+                and not is_not_connected
+                and not is_poll_timeout
+                and _maybe_auto_pause_account_on_pb_auth(
+                    conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
+                )
             ):
                 break
             if ok_pb:
@@ -1135,31 +1194,44 @@ def _send_followup_dm(
         )
         is_dedupe_skip = False
         is_not_connected = False
+        is_poll_timeout = False
         try:
-            result, cid = pb.run_agent(agent_id, arg, timeout_minutes=60, bonus_argument=bonus_arg)
-            raw_done = isinstance(result, dict) and result.get("status") == "finished"
-            out_rows: list[dict[str, Any]] = []
-            if raw_done and cid:
-                try:
-                    out_rows = list(pb.fetch_output(cid) or [])
-                except Exception as ex:
-                    logger.debug("Phantombuster fetch_output: %s", ex)
-            base_sum = summarize_phantom_result(result)
-            phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
-            is_not_connected = bool(
-                raw_done
-                and phantom_outcome_suggests_cannot_message_not_first_degree(
-                    result, fetch_output_rows=out_rows
-                )
+            result, cid = pb.run_agent(
+                agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=bonus_arg
             )
-            is_dedupe_skip = bool(
-                raw_done
-                and not is_not_connected
-                and phantom_outcome_suggests_input_already_processed(
-                    result, fetch_output_rows=out_rows
+            is_poll_timeout = is_synthetic_polling_timeout_result(result)
+            if is_poll_timeout:
+                ok_pb = False
+                is_dedupe_skip = False
+                is_not_connected = False
+                raw_done = False
+                out_rows: list[dict[str, Any]] = []
+                base_sum = summarize_phantom_result(result)
+                phantom_summary = base_sum
+            else:
+                raw_done = isinstance(result, dict) and result.get("status") == "finished"
+                out_rows = []
+                if raw_done and cid:
+                    try:
+                        out_rows = list(pb.fetch_output(cid) or [])
+                    except Exception as ex:
+                        logger.debug("Phantombuster fetch_output: %s", ex)
+                base_sum = summarize_phantom_result(result)
+                phantom_summary = append_fetch_output_to_summary(base_sum, out_rows)
+                is_not_connected = bool(
+                    raw_done
+                    and phantom_outcome_suggests_cannot_message_not_first_degree(
+                        result, fetch_output_rows=out_rows
+                    )
                 )
-            )
-            ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
+                is_dedupe_skip = bool(
+                    raw_done
+                    and not is_not_connected
+                    and phantom_outcome_suggests_input_already_processed(
+                        result, fetch_output_rows=out_rows
+                    )
+                )
+                ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
             _log_phantom_after(
                 stage_key,
                 account_id=account.account_id,
@@ -1173,6 +1245,7 @@ def _send_followup_dm(
             ok_pb = False
             result = {}
             is_not_connected = False
+            is_poll_timeout = False
             phantom_summary = format_phantom_api_error(e)
             _log_phantom_after(
                 stage_key,
@@ -1184,7 +1257,10 @@ def _send_followup_dm(
                 summary=phantom_summary,
             )
             logger.exception("Follow-up DM phantom failed lead=%s", lead_id)
-        if is_not_connected:
+        if is_poll_timeout:
+            _fu_d = f"{stage_key}:pb_polling_timeout|" + detail
+            _fu_st = "error"
+        elif is_not_connected:
             _fu_d = f"{stage_key}:pb_not_connected_yet|" + detail
             _fu_st = "skipped"
         elif is_dedupe_skip:
@@ -1211,8 +1287,13 @@ def _send_followup_dm(
         )
         if is_not_connected:
             schedule_next_dm_retry_in_days(conn, lead_id, DM_NOT_CONNECTED_COOLDOWN_DAYS)
-        if not is_dedupe_skip and not is_not_connected and _maybe_auto_pause_account_on_pb_auth(
-            conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
+        if (
+            not is_dedupe_skip
+            and not is_not_connected
+            and not is_poll_timeout
+            and _maybe_auto_pause_account_on_pb_auth(
+                conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
+            )
         ):
             return True
         if ok_pb:

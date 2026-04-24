@@ -19,6 +19,7 @@ from config import (
     PHANTOMBUSTER_AGENT_ID,
     PHANTOMBUSTER_API_KEY,
     PHANTOMBUSTER_BASE_URL,
+    PHANTOMBUSTER_LOG_POLLING_DEBUG,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,36 @@ def format_phantom_api_error(exc: BaseException) -> str:
         if r is not None:
             return str(PhantombusterHttpError.from_response(r, context="HTTPError"))[:_MAX_FORMAT_MSG]
     return f"exception:{type(exc).__name__}:{exc!s}"[:900]
+
+
+def synthetic_polling_timeout_result(container_id: str) -> dict[str, Any]:
+    """Result-shaped dict when /containers/fetch-result-object never returns finished/error before the deadline."""
+    return {
+        "status": "timeout",
+        "_synthetic": True,
+        "_synthetic_kind": "polling_timeout",
+        "_container_id": container_id,
+    }
+
+
+def is_synthetic_polling_timeout_result(result: Any) -> bool:
+    if not isinstance(result, dict) or not result.get("_synthetic"):
+        return False
+    return result.get("status") == "timeout" and result.get("_synthetic_kind") == "polling_timeout"
+
+
+# Extra terminal `status` values to treat as done (return dict to the caller) — extend from API observations.
+_PHANTOM_POLL_TERMINAL_EXTRA: frozenset[str] = frozenset(
+    {
+        "aborted",
+        "canceled",
+        "cancelled",
+    }
+)
+# Fast re-poll window after launch: short sleep while status is non-terminal (e.g. 3s "already processed" runs)
+_POLL_FAST_SEC = 3
+_POLL_SLOW_SEC = 30
+_EARLY_FAST_POLL_WINDOW = timedelta(minutes=3)
 
 
 # Serialize launch+wait per agent id across all PhantombusterClient instances.
@@ -246,10 +277,36 @@ class PhantombusterClient:
         return self.launch_agent(PHANTOMBUSTER_AGENT_ID, argument)
 
     # ── Poll until agent finishes ──────────────────────────────────────────────
+    def _log_polling_result(self, container_id: str, result: Any) -> None:
+        if PHANTOMBUSTER_LOG_POLLING_DEBUG:
+            try:
+                blob = json.dumps(result, default=str)[:3000]
+            except (TypeError, ValueError):
+                blob = str(result)[:3000]
+            logger.info("[Phantombuster] poll result (PHANTOMBUSTER_LOG_POLLING_DEBUG) container=%s: %s", container_id, blob)
+            return
+        if isinstance(result, dict):
+            st = result.get("status")
+            keys = list(result.keys())[:30]
+        else:
+            st = "non-dict"
+            keys = []
+        logger.info(
+            "[Phantombuster] poll container=%s status=%s top_keys=%s",
+            container_id,
+            st,
+            keys,
+        )
+
     def wait_for_completion(self, container_id: str, timeout_minutes: int = 30) -> dict:
-        """Poll Phantombuster every 30s until the agent finishes or times out."""
+        """
+        Poll /containers/fetch-result-object until status is finished/error or a known terminal state.
+        First request is immediate; for the first few minutes, re-poll every _POLL_FAST_SEC, then _POLL_SLOW_SEC.
+        On deadline, returns synthetic_polling_timeout_result (not empty {}), so callers can log pb_polling_timeout.
+        """
         url = f"{PHANTOMBUSTER_BASE_URL}/containers/fetch-result-object"
         deadline = datetime.utcnow() + timedelta(minutes=timeout_minutes)
+        started = datetime.utcnow()
 
         while datetime.utcnow() < deadline:
             resp = self.session.get(url, params={"id": container_id})
@@ -258,27 +315,59 @@ class PhantombusterClient:
                     resp, context="GET /containers/fetch-result-object"
                 )
             try:
-                result = resp.json()
+                result: Any = resp.json()
             except (ValueError, json.JSONDecodeError) as je:
                 raise PhantombusterHttpError(
                     status_code=resp.status_code,
                     body_snippet=f"invalid JSON ({je}); body={_truncate_pb_body(resp.text or '', max_len=800)}",
                     context="GET /containers/fetch-result-object",
-                    url=str(getattr(resp, 'url', '') or ''),
+                    url=str(getattr(resp, "url", "") or ""),
                 ) from je
+            if not isinstance(result, dict):
+                logger.warning(
+                    "[Phantombuster] fetch-result-object returned non-dict for container=%s: %s",
+                    container_id,
+                    type(result).__name__,
+                )
+                time.sleep(_POLL_FAST_SEC)
+                continue
+
+            self._log_polling_result(container_id, result)
             status = result.get("status")
+            st_str = str(status).strip().lower() if status is not None else ""
 
             if status == "finished":
-                logger.info("[Phantombuster] Agent finished successfully.")
+                logger.info("[Phantombuster] Agent finished successfully (container=%s).", container_id)
                 return result
             if status == "error":
                 logger.error("[Phantombuster] Agent errored: %s", result.get("message"))
                 return result
-            logger.debug("[Phantombuster] Status: %s — waiting...", status)
-            time.sleep(30)
+            if st_str in _PHANTOM_POLL_TERMINAL_EXTRA:
+                logger.warning(
+                    "[Phantombuster] Agent stopped with terminal status=%s (container=%s).",
+                    status,
+                    container_id,
+                )
+                return result
+            if status is None or (isinstance(status, str) and not st_str):
+                logger.warning(
+                    "[Phantombuster] Missing or empty status in result for container=%s; keys=%s",
+                    container_id,
+                    list(result.keys())[:25],
+                )
 
-        logger.warning("[Phantombuster] Timed out after %s minutes.", timeout_minutes)
-        return {}
+            logger.debug("[Phantombuster] Status: %s — waiting (container=%s)...", status, container_id)
+            if datetime.utcnow() - started < _EARLY_FAST_POLL_WINDOW:
+                time.sleep(_POLL_FAST_SEC)
+            else:
+                time.sleep(_POLL_SLOW_SEC)
+
+        logger.warning(
+            "[Phantombuster] Polling timed out after %s minutes (container=%s).",
+            timeout_minutes,
+            container_id,
+        )
+        return synthetic_polling_timeout_result(container_id)
 
     # ── Fetch the output CSV/JSON from completed agent ────────────────────────────
     def fetch_output(self, container_id: str) -> list[dict]:

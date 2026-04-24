@@ -149,7 +149,7 @@ Adjust path, user, and logging directory. Load the same environment as manual ru
 
 **Apify / dashboard-only leads (no Apollo merge file):** set `DAILY_SKIP_APOLLO=true` and `DAILY_SKIP_MERGED_CSV=true` so the run relies on leads already in SQLite (e.g. from `POST /api/leads/import`). Use `APIFY_IMPORT_FLOOR_SCORE` (same value as `MIN_SCORE_THRESHOLD` is typical) so dashboard imports can become `QUALIFIED` without full enrichment. **First DMs** do not require a separate “connections export” Phantombuster: after **`OPTIMISTIC_FIRST_DM_DAYS`**, the DM phantom may be sent while the lead is still **INVITED**; if the phantom output says not 1st degree / cannot message, the app logs `skipped` (`pb_not_connected_yet`), sets `next_dm_attempt_at` using **`DM_NOT_CONNECTED_COOLDOWN_DAYS`**, and retries later.
 
-**Phantombuster “input already processed”:** when the connect/DM phantom skips a line (dedupe memory) but the container still finishes, the app logs `action_log.status=skipped` and does **not** mark the connect as sent or move the lead to `INVITED`.
+**Phantombuster “input already processed”:** when the connect/DM phantom skips a line (dedupe memory) but the container still finishes, the app logs `action_log.status=skipped` with `pb_dedupe_already_processed`. The lead is not promoted to `INVITED` unless **`DEDUPE_CONNECT_ASSUME_INVITED=true`** in `.env` (use only when a prior connect really exists; false positives are possible with empty sheets / file mode). Polling the result-object API uses a **fast 3s interval** for the first few minutes, then 30s; if `PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES` is exceeded without a terminal `status`, the app logs `pb_polling_timeout` (distinct from a generic `pb_error`). In the Phantombuster UI, set **file management to “Combine files”** (not “Delete previous files”) for stable dedupe, and use fresh lead URLs when possible.
 
 ---
 
@@ -706,6 +706,9 @@ Two gate layers exist:
 | `DM_NOT_CONNECTED_COOLDOWN_DAYS` | When PB cannot message (not 1st degree), retry after this many full calendar days (`leads.next_dm_attempt_at`) |
 | `HARD_CAP_CONNECT` / `HARD_CAP_DM` | Global daily ceilings vs `steady_daily_limits` in `config/accounts.json` (defaults 60 / 100) |
 | `config/accounts.json` `profile_name` | Optional human label per identity (e.g. for logs / ops) |
+| `PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES` | Max wait when polling `fetch-result-object` for each connect/DM run (default 60) |
+| `PHANTOMBUSTER_LOG_POLLING_DEBUG` | Log full per-poll JSON (sensitive; default false) |
+| `DEDUPE_CONNECT_ASSUME_INVITED` | If true, `pb_dedupe_already_processed` on connect also sets lead `INVITED` + `invited_at` for first-DM timing (risky) |
 | Apollo / Phantombuster keys | As in `.env.example` |
 
 ---

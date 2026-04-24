@@ -64,6 +64,24 @@ PHANTOMBUSTER_DWELL_TIME = os.getenv("PHANTOMBUSTER_DWELL_TIME", "true").strip()
     "yes",
     "on",
 )
+# Phantombuster: poll /containers/fetch-result-object (engagement `run_agent` only)
+PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES = max(
+    1, int((os.getenv("PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES", "60") or "60").strip() or 60)
+)
+PHANTOMBUSTER_LOG_POLLING_DEBUG = os.getenv("PHANTOMBUSTER_LOG_POLLING_DEBUG", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+# If connect returns dedupe (already processed) but you trust a prior send: advance lead to INVITED for DM timing (risk: false positive).
+DEDUPE_CONNECT_ASSUME_INVITED = os.getenv("DEDUPE_CONNECT_ASSUME_INVITED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # First DM after invite (Connect + DM phantoms only; no list-export sync slot)
 OPTIMISTIC_FIRST_DM_DAYS = int((os.getenv("OPTIMISTIC_FIRST_DM_DAYS", "1") or "1").strip() or 1)
 DM_NOT_CONNECTED_COOLDOWN_DAYS = int(
