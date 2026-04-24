@@ -1,14 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { apiGet } from '../api'
 import type { Health, StatsOverview } from '../types'
 
@@ -37,18 +27,6 @@ export function Overview() {
       cancelled = true
     }
   }, [])
-
-  const chartData = useMemo(() => {
-    if (!stats?.metrics_daily_last_7d?.length) return []
-    const byDay = new Map<string, number>()
-    for (const r of stats.metrics_daily_last_7d) {
-      const k = r.day
-      byDay.set(k, (byDay.get(k) || 0) + Number(r.v || 0))
-    }
-    return [...byDay.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([day, total]) => ({ day, total }))
-  }, [stats])
 
   const connects = useMemo(() => {
     if (!stats?.action_log_breakdown) return { real: 0, dry: 0 }
@@ -166,28 +144,6 @@ export function Overview() {
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="panel">
-            <h2>Metrics (last 7 days, summed)</h2>
-            {chartData.length === 0 ? (
-              <p className="muted">No metrics_daily rows yet — run engagement after connects succeed.</p>
-            ) : (
-              <div className="chart-box">
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                    <XAxis dataKey="day" tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                    <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
-                    <Tooltip
-                      contentStyle={{ background: '#111', border: '1px solid #333' }}
-                    />
-                    <Legend />
-                    <Bar dataKey="total" name="All metrics" fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </div>
         </>
       )}
