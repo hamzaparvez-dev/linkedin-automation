@@ -98,9 +98,11 @@ def is_synthetic_polling_timeout_result(result: Any) -> bool:
     return result.get("status") == "timeout" and result.get("_synthetic_kind") == "polling_timeout"
 
 
-# Extra terminal `status` values to treat as done (return dict to the caller) — extend from API observations.
-_PHANTOM_POLL_TERMINAL_EXTRA: frozenset[str] = frozenset(
+# All terminal `status` values (lowercase) — return API dict immediately.
+_PHANTOM_POLL_TERMINAL: frozenset[str] = frozenset(
     {
+        "finished",
+        "error",
         "aborted",
         "canceled",
         "cancelled",
@@ -113,8 +115,11 @@ _EARLY_FAST_POLL_WINDOW = timedelta(minutes=3)
 # If `status` is never set but `resultObject` is present (Phantombuster quirk), treat as finished after
 # this many identical JSON snapshots in a row; inject status=finished so engagement_runner can proceed.
 _RESULTOBJECT_INFER_REPEATS = 3
+# "Already processed" / no-output dupes: empty resultObject, missing status — infer after this wall-clock stretch.
+_NOSTATUS_DEDUPE_SEC = 60
 _SYNTHETIC_INFERRED = "_synthetic_inferred"
 _SYNTHETIC_INFER_KEY = "resultobject_nostatus_stable"
+_SYNTHETIC_INFER_KEY_60S_EMPTY = "nostatus_dedupe_60s_empty"
 
 
 def _is_empty_or_none_status(status: Any) -> bool:
@@ -348,17 +353,22 @@ class PhantombusterClient:
 
     def wait_for_completion(self, container_id: str, timeout_minutes: int = 30) -> dict:
         """
-        Poll /containers/fetch-result-object until status is finished/error or a known terminal state.
+        Poll /containers/fetch-result-object until status is a terminal value, a synthetic match, or the deadline.
         First request is immediate; for the first few minutes, re-poll every _POLL_FAST_SEC, then _POLL_SLOW_SEC.
         On deadline, returns synthetic_polling_timeout_result (not empty {}), so callers can log pb_polling_timeout.
-        If the API omits `status` but returns a stable non-empty `resultObject`, we infer `status: finished` after
-        _RESULTOBJECT_INFER_REPEATS identical snapshots.
+
+        Inferred `status: finished` (Phantombuster API quirks):
+        - Missing/empty `status` with a stable non-empty `resultObject` — after _RESULTOBJECT_INFER_REPEATS identical
+          full-response snapshots.
+        - Missing/empty `status` and empty/unchanging `resultObject` for _NOSTATUS_DEDUPE_SEC (already-processed / no rows) —
+          the `running` status clears the ghost clock so real jobs (3–5+ min) keep polling.
         """
         url = f"{PHANTOMBUSTER_BASE_URL}/containers/fetch-result-object"
         deadline = _now_utc() + timedelta(minutes=timeout_minutes)
         started = _now_utc()
         nostatus_stable_fp: str | None = None
         nostatus_stable_repeats = 0
+        ghost_start: Optional[datetime] = None
 
         while _now_utc() < deadline:
             resp = self.session.get(url, params={"id": container_id})
@@ -381,6 +391,7 @@ class PhantombusterClient:
                     container_id,
                     type(result).__name__,
                 )
+                ghost_start = None
                 nostatus_stable_fp = None
                 nostatus_stable_repeats = 0
                 time.sleep(_POLL_FAST_SEC)
@@ -391,20 +402,51 @@ class PhantombusterClient:
             st_str = str(status).strip().lower() if status is not None else ""
             ro = result.get("resultObject")
 
-            if status == "finished":
-                logger.info("[Phantombuster] Agent finished successfully (container=%s).", container_id)
+            if st_str in _PHANTOM_POLL_TERMINAL:
+                if st_str == "finished":
+                    logger.info("[Phantombuster] Agent finished successfully (container=%s).", container_id)
+                elif st_str == "error":
+                    logger.error("[Phantombuster] Agent errored: %s", result.get("message"))
+                else:
+                    logger.warning(
+                        "[Phantombuster] Agent stopped with terminal status=%s (container=%s).",
+                        status,
+                        container_id,
+                    )
                 return result
-            if status == "error":
-                logger.error("[Phantombuster] Agent errored: %s", result.get("message"))
-                return result
-            if st_str in _PHANTOM_POLL_TERMINAL_EXTRA:
-                logger.warning(
-                    "[Phantombuster] Agent stopped with terminal status=%s (container=%s).",
+            if st_str == "running":
+                logger.debug(
+                    "[Phantombuster] status=running, polling (no 60s ghost) container=%s",
+                    container_id,
+                )
+                ghost_start = None
+                nostatus_stable_fp = None
+                nostatus_stable_repeats = 0
+                if _now_utc() - started < _EARLY_FAST_POLL_WINDOW:
+                    time.sleep(_POLL_FAST_SEC)
+                else:
+                    time.sleep(_POLL_SLOW_SEC)
+                continue
+            if not _is_empty_or_none_status(status):
+                # e.g. pending, queued — not the dedupe-ghost: reset clocks
+                logger.debug(
+                    "[Phantombuster] non-terminal status=%s — reset ghost timer (container=%s)",
                     status,
                     container_id,
                 )
-                return result
-            if _is_empty_or_none_status(status) and _resultobject_materially_nonempty(ro):
+                ghost_start = None
+                nostatus_stable_fp = None
+                nostatus_stable_repeats = 0
+                if _now_utc() - started < _EARLY_FAST_POLL_WINDOW:
+                    time.sleep(_POLL_FAST_SEC)
+                else:
+                    time.sleep(_POLL_SLOW_SEC)
+                continue
+
+            # Status missing, null, or empty string: dedupe-ghost and/or resultObject-stability
+            if ghost_start is None:
+                ghost_start = _now_utc()
+            if _resultobject_materially_nonempty(ro):
                 fp = _fingerprint_nostatus_result(result)
                 if fp == nostatus_stable_fp:
                     nostatus_stable_repeats += 1
@@ -432,12 +474,27 @@ class PhantombusterClient:
             else:
                 nostatus_stable_fp = None
                 nostatus_stable_repeats = 0
-                if _is_empty_or_none_status(status):
-                    logger.debug(
-                        "[Phantombuster] Missing or empty status in result for container=%s; keys=%s",
-                        container_id,
-                        list(result.keys())[:25],
-                    )
+                logger.debug(
+                    "[Phantombuster] Missing or empty status; empty resultObject (container=%s) keys=%s",
+                    container_id,
+                    list(result.keys())[:25],
+                )
+            # 60s dedupe ghost: only for empty/unchanging output (PB "already processed" with no rows).
+            # When resultObject is materially non-empty, rely on stable 3x above, not a wall clock.
+            if (not _resultobject_materially_nonempty(ro)) and (
+                _now_utc() - ghost_start >= timedelta(seconds=_NOSTATUS_DEDUPE_SEC)
+            ):
+                empty_combined: dict[str, Any] = {
+                    **result,
+                    "status": "finished",
+                    _SYNTHETIC_INFERRED: _SYNTHETIC_INFER_KEY_60S_EMPTY,
+                }
+                logger.info(
+                    "[Phantombuster] inferred_status=finished no status for %ss (dedupe-ghost) container=%s",
+                    _NOSTATUS_DEDUPE_SEC,
+                    container_id,
+                )
+                return empty_combined
 
             logger.debug("[Phantombuster] Status: %s — waiting (container=%s)...", status, container_id)
             if _now_utc() - started < _EARLY_FAST_POLL_WINDOW:

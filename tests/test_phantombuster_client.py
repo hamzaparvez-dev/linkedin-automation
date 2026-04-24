@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from integrations import phantombuster_client as pb
-from integrations.phantombuster_client import PhantombusterClient, _RESULTOBJECT_INFER_REPEATS
+from integrations.phantombuster_client import PhantombusterClient, _NOSTATUS_DEDUPE_SEC, _RESULTOBJECT_INFER_REPEATS
 
 
 def _ok_json(data: object) -> MagicMock:
@@ -100,6 +100,56 @@ class TestWaitForCompletion(unittest.TestCase):
             json.dumps([2]),
         )
         self.assertEqual(self.client.session.get.call_count, 6)
+
+    def test_60s_empty_nostatus_dedupe_infers(self) -> None:
+        """No status + empty resultObject: infer after _NOSTATUS_DEDUPE_SEC of ghost state in one tick."""
+        body: dict = {"resultObject": "[]"}  # materially empty, no status key
+        t0 = datetime(2020, 1, 1, 12, 0, 0)
+        t_plus = t0 + timedelta(seconds=_NOSTATUS_DEDUPE_SEC)
+        _utc = [t0, t0, t0, t0, t_plus]
+        with patch.object(pb, "_now_utc", side_effect=_utc):
+            self._patch_get(_ok_json(body))
+            out = self.client.wait_for_completion("c1", timeout_minutes=30)
+        self.assertEqual(self.client.session.get.call_count, 1)
+        self.assertEqual(out.get("status"), "finished")
+        self.assertEqual(out.get(pb._SYNTHETIC_INFERRED), pb._SYNTHETIC_INFER_KEY_60S_EMPTY)
+
+    def test_running_clears_then_empty_needs_60s_from_fresh_ghost(self) -> None:
+        """After running, ghost timer restarts: one empty response with time <60s does not dedupe-infer."""
+        t0 = datetime(2020, 1, 1, 12, 0, 0)
+        t_short = t0 + timedelta(seconds=10)  # <60s ghost stretch
+        t_end = t0 + timedelta(minutes=31)  # past 30m deadline, exit while before another GET
+        # 2× GET: running (clears), empty (ghost, not 60s); 3rd while() uses t_end, no 3rd GET
+        # _now_utc sequence: 2 init + while1 + sleep(running) + while2 + ghost + 60s + sleep(empty) + while3
+        _parts = [t0, t0, t0, t0, t0, t_short, t_short, t_short, t_end]
+        r_run = _ok_json({"status": "running"})
+        r_emp = _ok_json({"resultObject": "[]"})
+        with (
+            patch.object(pb, "_now_utc", side_effect=_parts),
+            patch.object(pb, "synthetic_polling_timeout_result", wraps=pb.synthetic_polling_timeout_result) as w_to,
+        ):
+            self._patch_get([r_run, r_emp])
+            out = self.client.wait_for_completion("c1", timeout_minutes=30)
+        self.assertEqual(self.client.session.get.call_count, 2)
+        w_to.assert_called_once()
+        self.assertNotEqual(out.get("status"), "finished")
+
+    def test_nonterminal_string_status_resets_ghost_timer(self) -> None:
+        """pending (or similar) is not a ghost: next empty poll restarts 60s clock."""
+        t0 = datetime(2019, 6, 1, 9, 0, 0)
+        t1 = t0 + timedelta(minutes=31)  # deadline exit
+        r_e = _ok_json({"resultObject": "[]"})
+        r_p = _ok_json({"status": "pending", "resultObject": "[]"})
+        _parts = [t0, t0, t0, t0, t0, t0, t0, t0, t0, t0, t0, t1, t1, t1, t1, t1]
+        with (
+            patch.object(pb, "_now_utc", side_effect=_parts),
+            patch.object(pb, "synthetic_polling_timeout_result", wraps=pb.synthetic_polling_timeout_result) as w_to,
+        ):
+            self._patch_get([r_e, r_p, r_e])
+            out = self.client.wait_for_completion("c1", timeout_minutes=30)
+        self.assertEqual(self.client.session.get.call_count, 3)
+        w_to.assert_called_once()
+        self.assertNotEqual(out.get("status"), "finished")
 
 
 if __name__ == "__main__":
