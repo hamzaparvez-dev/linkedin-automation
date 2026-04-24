@@ -110,6 +110,54 @@ _PHANTOM_POLL_TERMINAL_EXTRA: frozenset[str] = frozenset(
 _POLL_FAST_SEC = 3
 _POLL_SLOW_SEC = 30
 _EARLY_FAST_POLL_WINDOW = timedelta(minutes=3)
+# If `status` is never set but `resultObject` is present (Phantombuster quirk), treat as finished after
+# this many identical JSON snapshots in a row; inject status=finished so engagement_runner can proceed.
+_RESULTOBJECT_INFER_REPEATS = 3
+_SYNTHETIC_INFERRED = "_synthetic_inferred"
+_SYNTHETIC_INFER_KEY = "resultobject_nostatus_stable"
+
+
+def _is_empty_or_none_status(status: Any) -> bool:
+    if status is None:
+        return True
+    if isinstance(status, str) and not str(status).strip():
+        return True
+    return False
+
+
+def _resultobject_materially_nonempty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (list, dict)):
+        return len(value) > 0
+    if isinstance(value, str):
+        t = value.strip()
+        if not t:
+            return False
+        if t in ("[]", "{}", "null"):
+            return False
+        try:
+            parsed: Any = json.loads(t)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return bool(t)
+        if isinstance(parsed, (list, dict)) and len(parsed) == 0:
+            return False
+        if isinstance(parsed, str) and not str(parsed).strip():
+            return False
+        return True
+    return True
+
+
+def _fingerprint_nostatus_result(result: dict[str, Any]) -> str:
+    try:
+        return json.dumps(result, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(result)
+
+
+def _now_utc() -> datetime:
+    """Test seam: time source for polling loop (use patch in unit tests)."""
+    return datetime.utcnow()
 
 
 # Serialize launch+wait per agent id across all PhantombusterClient instances.
@@ -303,12 +351,16 @@ class PhantombusterClient:
         Poll /containers/fetch-result-object until status is finished/error or a known terminal state.
         First request is immediate; for the first few minutes, re-poll every _POLL_FAST_SEC, then _POLL_SLOW_SEC.
         On deadline, returns synthetic_polling_timeout_result (not empty {}), so callers can log pb_polling_timeout.
+        If the API omits `status` but returns a stable non-empty `resultObject`, we infer `status: finished` after
+        _RESULTOBJECT_INFER_REPEATS identical snapshots.
         """
         url = f"{PHANTOMBUSTER_BASE_URL}/containers/fetch-result-object"
-        deadline = datetime.utcnow() + timedelta(minutes=timeout_minutes)
-        started = datetime.utcnow()
+        deadline = _now_utc() + timedelta(minutes=timeout_minutes)
+        started = _now_utc()
+        nostatus_stable_fp: str | None = None
+        nostatus_stable_repeats = 0
 
-        while datetime.utcnow() < deadline:
+        while _now_utc() < deadline:
             resp = self.session.get(url, params={"id": container_id})
             if not resp.ok:
                 raise PhantombusterHttpError.from_response(
@@ -329,12 +381,15 @@ class PhantombusterClient:
                     container_id,
                     type(result).__name__,
                 )
+                nostatus_stable_fp = None
+                nostatus_stable_repeats = 0
                 time.sleep(_POLL_FAST_SEC)
                 continue
 
             self._log_polling_result(container_id, result)
             status = result.get("status")
             st_str = str(status).strip().lower() if status is not None else ""
+            ro = result.get("resultObject")
 
             if status == "finished":
                 logger.info("[Phantombuster] Agent finished successfully (container=%s).", container_id)
@@ -349,15 +404,43 @@ class PhantombusterClient:
                     container_id,
                 )
                 return result
-            if status is None or (isinstance(status, str) and not st_str):
-                logger.warning(
-                    "[Phantombuster] Missing or empty status in result for container=%s; keys=%s",
+            if _is_empty_or_none_status(status) and _resultobject_materially_nonempty(ro):
+                fp = _fingerprint_nostatus_result(result)
+                if fp == nostatus_stable_fp:
+                    nostatus_stable_repeats += 1
+                else:
+                    nostatus_stable_fp = fp
+                    nostatus_stable_repeats = 1
+                if nostatus_stable_repeats >= _RESULTOBJECT_INFER_REPEATS:
+                    combined: dict[str, Any] = {
+                        **result,
+                        "status": "finished",
+                        _SYNTHETIC_INFERRED: _SYNTHETIC_INFER_KEY,
+                    }
+                    logger.info(
+                        "[Phantombuster] inferred_status=finished resultObject stable x%s (no status) container=%s",
+                        _RESULTOBJECT_INFER_REPEATS,
+                        container_id,
+                    )
+                    return combined
+                logger.debug(
+                    "[Phantombuster] Missing status; awaiting stable resultObject (repeat %s/%s) container=%s",
+                    nostatus_stable_repeats,
+                    _RESULTOBJECT_INFER_REPEATS,
                     container_id,
-                    list(result.keys())[:25],
                 )
+            else:
+                nostatus_stable_fp = None
+                nostatus_stable_repeats = 0
+                if _is_empty_or_none_status(status):
+                    logger.debug(
+                        "[Phantombuster] Missing or empty status in result for container=%s; keys=%s",
+                        container_id,
+                        list(result.keys())[:25],
+                    )
 
             logger.debug("[Phantombuster] Status: %s — waiting (container=%s)...", status, container_id)
-            if datetime.utcnow() - started < _EARLY_FAST_POLL_WINDOW:
+            if _now_utc() - started < _EARLY_FAST_POLL_WINDOW:
                 time.sleep(_POLL_FAST_SEC)
             else:
                 time.sleep(_POLL_SLOW_SEC)
