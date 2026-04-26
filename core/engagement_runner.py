@@ -27,15 +27,18 @@ from core.ai_engine import OutreachResult, validate_outreach_plaintext
 from core.behavior_controller import approve_action, record_action_executed, set_account_paused
 from core.phantom_payload import (
     append_fetch_output_to_summary,
+    build_dm_message_sender_argument,
     build_engagement_argument,
     looks_like_linkedin_session_cookie,
     looks_plausible_browser_user_agent,
+    merge_dm_message_sender_session,
     merge_phantom_launch_defaults,
     normalize_session_cookie_for_bonus,
     phantom_failure_suggests_linkedin_session_issue,
     phantom_outcome_suggests_cannot_message_not_first_degree,
     phantom_outcome_suggests_input_already_processed,
     summarize_phantom_result,
+    validate_dm_message_sender_argument,
     validate_engagement_argument,
 )
 from core.repository import (
@@ -162,7 +165,7 @@ def _build_connect_argument(linkedin_url: str, message: str) -> dict:
 
 
 def _build_dm_argument(linkedin_url: str, message: str) -> dict:
-    return build_engagement_argument(linkedin_url, message)
+    return build_dm_message_sender_argument(linkedin_url, message)
 
 
 def _engagement_bonus_argument(linkedin_session: str, user_agent: str) -> Optional[dict[str, str]]:
@@ -188,6 +191,21 @@ def _merge_engagement_phantom_argument(
         arg = merge_phantom_launch_defaults(built, session_hint="", omit_session_fields=True)
         return arg, bonus
     arg = merge_phantom_launch_defaults(built, session_hint=linkedin_session)
+    return arg, None
+
+
+def _merge_dm_phantom_argument(
+    linkedin_session: str,
+    built: dict[str, Any],
+    *,
+    user_agent: str,
+) -> tuple[dict[str, Any], Optional[dict[str, str]]]:
+    """Message Sender: do not use merge_phantom_launch_defaults (connect-only strip)."""
+    bonus = _engagement_bonus_argument(linkedin_session, user_agent)
+    if bonus:
+        arg = merge_dm_message_sender_session(built, session_hint="", omit_session_fields=True)
+        return arg, bonus
+    arg = merge_dm_message_sender_session(built, session_hint=linkedin_session, omit_session_fields=False)
     return arg, None
 
 
@@ -775,12 +793,12 @@ def _process_dms(
             )
             continue
 
-        arg, bonus_arg = _merge_engagement_phantom_argument(
+        arg, bonus_arg = _merge_dm_phantom_argument(
             linkedin_session,
             _build_dm_argument(lead["linkedin_url"], body),
             user_agent=user_agent,
         )
-        v_ok, v_reason = validate_engagement_argument(arg, bonus_argument=bonus_arg)
+        v_ok, v_reason = validate_dm_message_sender_argument(arg, bonus_argument=bonus_arg)
         if not v_ok:
             logger.warning("Skipping lead %s: invalid_payload:%s", lead_id, v_reason)
             log_action(

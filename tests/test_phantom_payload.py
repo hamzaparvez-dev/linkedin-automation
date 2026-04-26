@@ -7,13 +7,16 @@ import unittest
 import config as config_module
 from core.phantom_payload import (
     append_fetch_output_to_summary,
+    build_dm_message_sender_argument,
     build_engagement_argument,
     looks_plausible_browser_user_agent,
+    merge_dm_message_sender_session,
     merge_phantom_launch_defaults,
     normalize_engagement_linkedin_url,
     normalize_session_cookie_for_bonus,
     phantom_failure_suggests_linkedin_session_issue,
     phantom_outcome_suggests_input_already_processed,
+    validate_dm_message_sender_argument,
     validate_engagement_argument,
     validate_phantom_bonus_argument,
 )
@@ -248,6 +251,97 @@ class TestPhantomPayload(unittest.TestCase):
 
     def test_finished_is_not_synthetic_polling_timeout(self) -> None:
         self.assertFalse(is_synthetic_polling_timeout_result({"status": "finished"}))
+
+
+class TestDmMessageSenderPayload(unittest.TestCase):
+    def setUp(self) -> None:
+        self._dm_field = config_module.PHANTOMBUSTER_DM_URL_FIELD
+        self._msgctl = config_module.PHANTOMBUSTER_MESSAGE_CONTROL
+        self._en_scr = config_module.PHANTOMBUSTER_ENABLE_SCRAPING
+        self._mode = config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
+        self._cookie = config_module.PHANTOMBUSTER_SESSION_COOKIE
+        self._ua = config_module.PHANTOMBUSTER_USER_AGENT
+        config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "singular"
+        config_module.PHANTOMBUSTER_SESSION_COOKIE = _FAKE_SESSION
+        config_module.PHANTOMBUSTER_USER_AGENT = "Mozilla/5.0 (test-ua-dm)"
+        config_module.PHANTOMBUSTER_MESSAGE_CONTROL = "sendOnlyIfNoMessage"
+        config_module.PHANTOMBUSTER_ENABLE_SCRAPING = False
+
+    def tearDown(self) -> None:
+        config_module.PHANTOMBUSTER_DM_URL_FIELD = self._dm_field
+        config_module.PHANTOMBUSTER_MESSAGE_CONTROL = self._msgctl
+        config_module.PHANTOMBUSTER_ENABLE_SCRAPING = self._en_scr
+        config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = self._mode
+        config_module.PHANTOMBUSTER_SESSION_COOKIE = self._cookie
+        config_module.PHANTOMBUSTER_USER_AGENT = self._ua
+
+    def test_build_profile_mode_keys(self) -> None:
+        config_module.PHANTOMBUSTER_DM_URL_FIELD = "profile"
+        a = build_dm_message_sender_argument("https://www.linkedin.com/in/whoever", "Hello DM")
+        self.assertEqual(
+            set(a.keys()),
+            {"profileUrl", "message", "messageControl", "enableScraping", "emailChooser"},
+        )
+        self.assertEqual(a["messageControl"], "sendOnlyIfNoMessage")
+        self.assertIs(a["enableScraping"], False)
+        self.assertNotIn("numberOfAddsPerLaunch", a)
+        m = merge_dm_message_sender_session(a, session_hint=_FAKE_SESSION)
+        self.assertIn("sessionCookie", m)
+        ok, msg = validate_dm_message_sender_argument(m)
+        self.assertTrue(ok, msg)
+
+    def test_build_spreadsheet_url_mode(self) -> None:
+        config_module.PHANTOMBUSTER_DM_URL_FIELD = "spreadsheet"
+        a = build_dm_message_sender_argument("https://www.linkedin.com/in/someone", "X")
+        self.assertIn("spreadsheetUrl", a)
+        self.assertNotIn("profileUrl", a)
+        m = merge_dm_message_sender_session(a, session_hint=_FAKE_SESSION)
+        ok, msg = validate_dm_message_sender_argument(m)
+        self.assertTrue(ok, msg)
+
+    def test_dm_rejects_both_url_keys(self) -> None:
+        a = {
+            "profileUrl": "https://www.linkedin.com/in/a",
+            "spreadsheetUrl": "https://www.linkedin.com/in/b",
+            "message": "m",
+            "messageControl": "sendOnlyIfNoMessage",
+            "enableScraping": False,
+            "emailChooser": "none",
+            "sessionCookie": _FAKE_SESSION,
+            "userAgent": "Mozilla/5.0 (a)",
+        }
+        ok, msg = validate_dm_message_sender_argument(a)
+        self.assertFalse(ok)
+        self.assertIn("profileUrl_and_spreadsheetUrl", msg)
+
+    def test_dm_rejects_forbidden_key(self) -> None:
+        a = {
+            "profileUrl": "https://www.linkedin.com/in/ok",
+            "message": "m",
+            "messageControl": "sendOnlyIfNoMessage",
+            "enableScraping": False,
+            "emailChooser": "none",
+            "numberOfAddsPerLaunch": 1,
+            "sessionCookie": _FAKE_SESSION,
+        }
+        ok, msg = validate_dm_message_sender_argument(a)
+        self.assertFalse(ok)
+        self.assertIn("forbidden", msg)
+
+    def test_dm_with_bonus(self) -> None:
+        a = {
+            "profileUrl": "https://www.linkedin.com/in/person",
+            "message": "m",
+            "messageControl": "sendOnlyIfNoMessage",
+            "enableScraping": False,
+            "emailChooser": "none",
+        }
+        b = {
+            "sessionCookie": f"li_at={_FAKE_SESSION}",
+            "userAgent": "Mozilla/5.0 (b)",
+        }
+        ok, msg = validate_dm_message_sender_argument(a, bonus_argument=b)
+        self.assertTrue(ok, msg)
 
 
 if __name__ == "__main__":

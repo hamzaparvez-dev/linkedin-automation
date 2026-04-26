@@ -20,6 +20,15 @@ _LI_PATH = re.compile(
 _IN_PATH = re.compile(r"^https://www\.linkedin\.com/in/[^/?#\s]+$", re.IGNORECASE)
 
 _SINGULAR_ARG_KEYS = frozenset({"profileUrl", "numberOfAddsPerLaunch", "message"})
+# LinkedIn Message Sender: strict keys in `argument` (connect phantom uses numberOfAddsPerLaunch; Message Sender does not)
+_DM_MSG_SENDER_BODY_KEYS = frozenset(
+    {
+        "message",
+        "messageControl",
+        "enableScraping",
+        "emailChooser",
+    }
+)
 
 
 def normalize_engagement_linkedin_url(raw: Optional[str]) -> Optional[str]:
@@ -210,6 +219,164 @@ def build_engagement_argument(linkedin_url: str, message: str) -> dict[str, Any]
         "numberOfAddsPerLaunch": 1,
         "message": msg,
     }
+
+
+def build_dm_message_sender_argument(linkedin_url: str, message: str) -> dict[str, Any]:
+    """
+    LinkedIn Message Sender (DM) phantom: no numberOfAddsPerLaunch / no connect-only keys.
+    Exactly one of profileUrl or spreadsheetUrl (per PHANTOMBUSTER_DM_URL_FIELD) + message + controls.
+    """
+    from config import (
+        PHANTOMBUSTER_DM_URL_FIELD,
+        PHANTOMBUSTER_EMAIL_CHOOSER,
+        PHANTOMBUSTER_ENABLE_SCRAPING,
+        PHANTOMBUSTER_MESSAGE_CONTROL,
+    )
+
+    url = normalize_engagement_linkedin_url(linkedin_url)
+    if not url:
+        raise ValueError("invalid_or_empty_linkedin_url")
+    msg = (message or "").strip()
+    if not msg:
+        raise ValueError("empty_message")
+    email_chooser = (PHANTOMBUSTER_EMAIL_CHOOSER or "none").strip() or "none"
+    mctl = (PHANTOMBUSTER_MESSAGE_CONTROL or "sendOnlyIfNoMessage").strip() or "sendOnlyIfNoMessage"
+    out: dict[str, Any] = {
+        "message": msg,
+        "messageControl": mctl,
+        "enableScraping": bool(PHANTOMBUSTER_ENABLE_SCRAPING),
+        "emailChooser": email_chooser,
+    }
+    if (PHANTOMBUSTER_DM_URL_FIELD or "profile").strip().lower() == "spreadsheet":
+        out["spreadsheetUrl"] = url
+    else:
+        out["profileUrl"] = url
+    return out
+
+
+def merge_dm_message_sender_session(
+    argument: dict[str, Any],
+    *,
+    session_hint: str = "",
+    omit_session_fields: bool = False,
+) -> dict[str, Any]:
+    """
+    Attach session/UA to Message Sender `argument` without using merge_phantom_launch_defaults
+    (which strips to connect-only singular keys).
+    """
+    from config import PHANTOMBUSTER_SESSION_COOKIE, PHANTOMBUSTER_USER_AGENT
+
+    out = dict(argument)
+    if omit_session_fields:
+        return out
+    hint = (session_hint or "").strip()
+    if looks_like_linkedin_session_cookie(hint):
+        sess = hint
+    elif not hint:
+        sess = (PHANTOMBUSTER_SESSION_COOKIE or "").strip()
+    else:
+        sess = ""
+    if not str(out.get("sessionCookie") or "").strip() and sess:
+        out["sessionCookie"] = sess
+    if PHANTOMBUSTER_USER_AGENT:
+        out.setdefault("userAgent", PHANTOMBUSTER_USER_AGENT)
+    return out
+
+
+def is_message_sender_style_argument(argument: Any) -> bool:
+    """True if `argument` was built for LinkedIn Message Sender (vs Auto Connect) — for launch validation branch."""
+    return isinstance(argument, dict) and "messageControl" in argument
+
+
+def _validate_dm_message_sender(
+    argument: dict[str, Any],
+    *,
+    session_via_bonus: bool = False,
+    max_message_len: int,
+) -> tuple[bool, str]:
+    if not isinstance(argument, dict):
+        return False, "argument_not_object"
+    forbidden = (
+        "numberOfAddsPerLaunch",
+        "numberOfLinesPerLaunch",
+        "profileUrls",
+        "spreadsheetUrlExclusionList",
+        "inputType",
+    )
+    for f in forbidden:
+        if f in argument:
+            return False, f"forbidden_key:{f}"
+    if "profileUrl" in argument and "spreadsheetUrl" in argument:
+        return False, "profileUrl_and_spreadsheetUrl_both_set"
+    if "profileUrl" not in argument and "spreadsheetUrl" not in argument:
+        return False, "require_profileUrl_or_spreadsheetUrl"
+    for k in _DM_MSG_SENDER_BODY_KEYS:
+        if k not in argument:
+            return False, f"missing_key:{k}"
+    allowed_with: set[str] = set(_DM_MSG_SENDER_BODY_KEYS) | {"profileUrl", "spreadsheetUrl"}
+    if not session_via_bonus:
+        allowed_with |= {"sessionCookie", "userAgent"}
+    if set(argument.keys()) - allowed_with:
+        return False, f"argument_extra_keys:{','.join(sorted(set(argument.keys()) - allowed_with))}"
+    for url_key in ("profileUrl", "spreadsheetUrl"):
+        if url_key not in argument:
+            continue
+        raw = argument.get(url_key)
+        if not isinstance(raw, str) or not raw.strip():
+            return False, f"{url_key}_missing_or_empty"
+        u = str(raw).strip()
+        u_norm = normalize_engagement_linkedin_url(u)
+        if not u_norm:
+            return False, f"invalid_{url_key}_shape"
+        if u != u_norm:
+            return False, f"{url_key}_not_canonical"
+        if url_key == "profileUrl":
+            if not _IN_PATH.match(u_norm):
+                return False, "profileUrl_must_match_https_www_linkedin_com_in_handle"
+    msg = argument.get("message")
+    if not isinstance(msg, str) or not str(msg).strip():
+        return False, "message_empty"
+    if len(str(msg)) > max_message_len:
+        return False, f"message_too_long_max_{max_message_len}_chars"
+    mc = argument.get("messageControl")
+    if not isinstance(mc, str) or not mc.strip():
+        return False, "messageControl_empty"
+    if not isinstance(argument.get("enableScraping"), bool):
+        return False, "enableScraping_not_bool"
+    ec = argument.get("emailChooser")
+    if not isinstance(ec, str) or not str(ec).strip():
+        return False, "emailChooser_empty"
+    if not session_via_bonus:
+        sc = argument.get("sessionCookie")
+        if not isinstance(sc, str) or len(sc.strip()) < 50:
+            return False, "missing_or_short_sessionCookie"
+        ua = argument.get("userAgent")
+        if ua is not None and not isinstance(ua, str):
+            return False, "userAgent_bad_type"
+    return True, ""
+
+
+def validate_dm_message_sender_argument(
+    argument: dict[str, Any],
+    *,
+    bonus_argument: Optional[dict[str, Any]] = None,
+    max_message_chars: Optional[int] = None,
+) -> tuple[bool, str]:
+    from config import MAX_PHANTOM_DM_MESSAGE_CHARS, PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
+
+    mlen = MAX_PHANTOM_DM_MESSAGE_CHARS if max_message_chars is None else int(max_message_chars)
+    if mlen < 1:
+        mlen = MAX_PHANTOM_DM_MESSAGE_CHARS
+    if not isinstance(argument, dict):
+        return False, "argument_not_object"
+    if bonus_argument is not None:
+        ok_b, msg_b = validate_phantom_bonus_argument(bonus_argument)
+        if not ok_b:
+            return False, msg_b
+        if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE != "singular":
+            return False, "bonus_argument_only_supported_for_singular_profile_mode"
+        return _validate_dm_message_sender(argument, session_via_bonus=True, max_message_len=mlen)
+    return _validate_dm_message_sender(argument, max_message_len=mlen)
 
 
 def _validate_array(argument: dict[str, Any]) -> tuple[bool, str]:

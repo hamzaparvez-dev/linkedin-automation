@@ -204,16 +204,28 @@ class PhantombusterClient:
                 raise ValueError(f"invalid_phantom_bonus_argument:{msg_b}")
 
         if isinstance(argument, dict) and (
-            argument.get("profileUrls") is not None or argument.get("profileUrl") is not None
+            argument.get("profileUrls") is not None
+            or argument.get("profileUrl") is not None
+            or argument.get("spreadsheetUrl") is not None
         ):
-            from core.phantom_payload import log_engagement_argument_json, validate_engagement_argument
+            from core.phantom_payload import (
+                is_message_sender_style_argument,
+                log_engagement_argument_json,
+                validate_dm_message_sender_argument,
+                validate_engagement_argument,
+            )
 
-            ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
+            if is_message_sender_style_argument(argument):
+                ok, msg = validate_dm_message_sender_argument(argument, bonus_argument=bonus_argument)
+            else:
+                ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
             if not ok:
                 raise ValueError(f"invalid_phantom_argument:{msg}")
             log_engagement_argument_json(argument, agent_id=agent_id)
 
-        if isinstance(argument, dict) and argument.get("profileUrl") is not None:
+        if isinstance(argument, dict) and (
+            argument.get("profileUrl") is not None or argument.get("spreadsheetUrl") is not None
+        ):
             logger.info(
                 "[DEBUG] final_argument_json: %s",
                 json.dumps(argument, ensure_ascii=False, sort_keys=True),
