@@ -199,13 +199,11 @@ def _merge_dm_phantom_argument(
     built: dict[str, Any],
     *,
     user_agent: str,
-) -> tuple[dict[str, Any], Optional[dict[str, str]]]:
-    """Message Sender: do not use merge_phantom_launch_defaults (connect-only strip)."""
-    bonus = _engagement_bonus_argument(linkedin_session, user_agent)
-    if bonus:
-        arg = merge_dm_message_sender_session(built, session_hint="", omit_session_fields=True)
-        return arg, bonus
-    arg = merge_dm_message_sender_session(built, session_hint=linkedin_session, omit_session_fields=False)
+) -> tuple[dict[str, Any], None]:
+    """Message Sender: session/UA on root `argument` only; never `bonusArgument`."""
+    arg = merge_dm_message_sender_session(
+        built, session_hint=linkedin_session, user_agent=user_agent
+    )
     return arg, None
 
 
@@ -793,12 +791,12 @@ def _process_dms(
             )
             continue
 
-        arg, bonus_arg = _merge_dm_phantom_argument(
+        arg, _ = _merge_dm_phantom_argument(
             linkedin_session,
             _build_dm_argument(lead["linkedin_url"], body),
             user_agent=user_agent,
         )
-        v_ok, v_reason = validate_dm_message_sender_argument(arg, bonus_argument=bonus_arg)
+        v_ok, v_reason = validate_dm_message_sender_argument(arg)
         if not v_ok:
             logger.warning("Skipping lead %s: invalid_payload:%s", lead_id, v_reason)
             log_action(
@@ -855,7 +853,7 @@ def _process_dms(
             is_poll_timeout = False
             try:
                 result, cid = pb.run_agent(
-                    agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=bonus_arg
+                    agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=None
                 )
                 is_poll_timeout = is_synthetic_polling_timeout_result(result)
                 if is_poll_timeout:

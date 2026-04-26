@@ -255,7 +255,6 @@ class TestPhantomPayload(unittest.TestCase):
 
 class TestDmMessageSenderPayload(unittest.TestCase):
     def setUp(self) -> None:
-        self._dm_field = config_module.PHANTOMBUSTER_DM_URL_FIELD
         self._msgctl = config_module.PHANTOMBUSTER_MESSAGE_CONTROL
         self._en_scr = config_module.PHANTOMBUSTER_ENABLE_SCRAPING
         self._mode = config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
@@ -268,38 +267,39 @@ class TestDmMessageSenderPayload(unittest.TestCase):
         config_module.PHANTOMBUSTER_ENABLE_SCRAPING = False
 
     def tearDown(self) -> None:
-        config_module.PHANTOMBUSTER_DM_URL_FIELD = self._dm_field
         config_module.PHANTOMBUSTER_MESSAGE_CONTROL = self._msgctl
         config_module.PHANTOMBUSTER_ENABLE_SCRAPING = self._en_scr
         config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = self._mode
         config_module.PHANTOMBUSTER_SESSION_COOKIE = self._cookie
         config_module.PHANTOMBUSTER_USER_AGENT = self._ua
 
-    def test_build_profile_mode_keys(self) -> None:
-        config_module.PHANTOMBUSTER_DM_URL_FIELD = "profile"
+    def test_build_uses_spreadsheet_url_only(self) -> None:
         a = build_dm_message_sender_argument("https://www.linkedin.com/in/whoever", "Hello DM")
         self.assertEqual(
             set(a.keys()),
-            {"profileUrl", "message", "messageControl", "enableScraping", "emailChooser"},
+            {"spreadsheetUrl", "message", "messageControl", "enableScraping", "emailChooser"},
         )
+        self.assertTrue(a["spreadsheetUrl"].startswith("https://www.linkedin.com/in/"))
         self.assertEqual(a["messageControl"], "sendOnlyIfNoMessage")
         self.assertIs(a["enableScraping"], False)
         self.assertNotIn("numberOfAddsPerLaunch", a)
-        m = merge_dm_message_sender_session(a, session_hint=_FAKE_SESSION)
-        self.assertIn("sessionCookie", m)
-        ok, msg = validate_dm_message_sender_argument(m)
-        self.assertTrue(ok, msg)
-
-    def test_build_spreadsheet_url_mode(self) -> None:
-        config_module.PHANTOMBUSTER_DM_URL_FIELD = "spreadsheet"
-        a = build_dm_message_sender_argument("https://www.linkedin.com/in/someone", "X")
-        self.assertIn("spreadsheetUrl", a)
         self.assertNotIn("profileUrl", a)
         m = merge_dm_message_sender_session(a, session_hint=_FAKE_SESSION)
+        self.assertEqual(m.get("sessionCookie"), _FAKE_SESSION)
+        self.assertNotIn("li_at=", m.get("sessionCookie") or "")
         ok, msg = validate_dm_message_sender_argument(m)
         self.assertTrue(ok, msg)
 
-    def test_dm_rejects_both_url_keys(self) -> None:
+    def test_merge_prefers_per_account_user_agent(self) -> None:
+        a = build_dm_message_sender_argument("https://www.linkedin.com/in/someone", "X")
+        m = merge_dm_message_sender_session(
+            a, session_hint=_FAKE_SESSION, user_agent="Mozilla/5.0 (per-account)"
+        )
+        self.assertEqual(m.get("userAgent"), "Mozilla/5.0 (per-account)")
+        ok, msg = validate_dm_message_sender_argument(m)
+        self.assertTrue(ok, msg)
+
+    def test_dm_rejects_profile_url_key(self) -> None:
         a = {
             "profileUrl": "https://www.linkedin.com/in/a",
             "spreadsheetUrl": "https://www.linkedin.com/in/b",
@@ -312,36 +312,22 @@ class TestDmMessageSenderPayload(unittest.TestCase):
         }
         ok, msg = validate_dm_message_sender_argument(a)
         self.assertFalse(ok)
-        self.assertIn("profileUrl_and_spreadsheetUrl", msg)
+        self.assertIn("forbidden_key:profileUrl", msg)
 
     def test_dm_rejects_forbidden_key(self) -> None:
         a = {
-            "profileUrl": "https://www.linkedin.com/in/ok",
+            "spreadsheetUrl": "https://www.linkedin.com/in/ok",
             "message": "m",
             "messageControl": "sendOnlyIfNoMessage",
             "enableScraping": False,
             "emailChooser": "none",
             "numberOfAddsPerLaunch": 1,
             "sessionCookie": _FAKE_SESSION,
+            "userAgent": "Mozilla/5.0 (a)",
         }
         ok, msg = validate_dm_message_sender_argument(a)
         self.assertFalse(ok)
         self.assertIn("forbidden", msg)
-
-    def test_dm_with_bonus(self) -> None:
-        a = {
-            "profileUrl": "https://www.linkedin.com/in/person",
-            "message": "m",
-            "messageControl": "sendOnlyIfNoMessage",
-            "enableScraping": False,
-            "emailChooser": "none",
-        }
-        b = {
-            "sessionCookie": f"li_at={_FAKE_SESSION}",
-            "userAgent": "Mozilla/5.0 (b)",
-        }
-        ok, msg = validate_dm_message_sender_argument(a, bonus_argument=b)
-        self.assertTrue(ok, msg)
 
 
 if __name__ == "__main__":

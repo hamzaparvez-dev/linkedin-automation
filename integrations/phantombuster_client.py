@@ -216,7 +216,7 @@ class PhantombusterClient:
             )
 
             if is_message_sender_style_argument(argument):
-                ok, msg = validate_dm_message_sender_argument(argument, bonus_argument=bonus_argument)
+                ok, msg = validate_dm_message_sender_argument(argument)
             else:
                 ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
             if not ok:

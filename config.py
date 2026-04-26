@@ -52,9 +52,6 @@ PHANTOMBUSTER_USER_AGENT = os.getenv(
 ).strip()
 PHANTOMBUSTER_INPUT_TYPE = os.getenv("PHANTOMBUSTER_INPUT_TYPE", "profileUrl").strip()
 PHANTOMBUSTER_EMAIL_CHOOSER = os.getenv("PHANTOMBUSTER_EMAIL_CHOOSER", "none").strip()
-# LinkedIn Message Sender (DM phantom): "profile" = use profileUrl; "spreadsheet" = use spreadsheetUrl only (e.g. some oneOf schemas)
-_dm_uf = os.getenv("PHANTOMBUSTER_DM_URL_FIELD", "profile").strip().lower()
-PHANTOMBUSTER_DM_URL_FIELD: str = _dm_uf if _dm_uf in ("profile", "spreadsheet") else "profile"
 # Message Sender behaviour (Message Sender phantom; API argument keys)
 PHANTOMBUSTER_MESSAGE_CONTROL = os.getenv("PHANTOMBUSTER_MESSAGE_CONTROL", "sendOnlyIfNoMessage").strip()
 PHANTOMBUSTER_ENABLE_SCRAPING = os.getenv("PHANTOMBUSTER_ENABLE_SCRAPING", "false").strip().lower() in (
