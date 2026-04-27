@@ -137,6 +137,13 @@ def _dm_agent_id(account: AccountConfig) -> str:
     return (account.phantombuster_dm_agent_id or PHANTOMBUSTER_DM_AGENT_ID or "").strip()
 
 
+def _followup_phantom_log_action(stage_num: int) -> str:
+    """[phantom_start] / [phantom_end] action= — distinct from first-dm 'dm' in PM2 (followup_dm_1, …)."""
+    if stage_num in (1, 2, 3):
+        return f"followup_dm_{stage_num}"
+    return "followup_dm"
+
+
 def _resolve_engagement_user_agent(conn, account: AccountConfig) -> str:
     """SQLite accounts_meta → accounts.json → warn + PHANTOMBUSTER_USER_AGENT."""
     from config import PHANTOMBUSTER_USER_AGENT
@@ -1164,21 +1171,34 @@ def _send_followup_dm(
             return True
 
     if not agent_id:
-        logger.warning("No DM agent id — skip follow-up for %s", lead_id)
+        logger.warning("No DM agent id (phantombuster_dm_agent_id) — skip followup_dm_%s for %s", stage_num, lead_id)
         return True
 
-    arg, bonus_arg = _merge_engagement_phantom_argument(
+    phantom_log_action = _followup_phantom_log_action(stage_num)
+    arg, _ = _merge_dm_phantom_argument(
         linkedin_session,
         _build_dm_argument(lead["linkedin_url"], body),
         user_agent=user_agent,
     )
-    v_ok, v_reason = validate_engagement_argument(arg, bonus_argument=bonus_arg)
+    v_ok, v_reason = validate_dm_message_sender_argument(arg)
     if not v_ok:
-        logger.warning("Skipping lead %s: invalid_payload:%s", lead_id, v_reason)
+        logger.warning("Skipping lead %s: invalid_payload (Message Sender) followup_dm_%s: %s", lead_id, stage_num, v_reason)
+        log_action(
+            conn,
+            lead_id=lead_id,
+            account_id=account.account_id,
+            action_type="dm",
+            status="skipped",
+            detail=f"followup_dm_{stage_num}|invalid_payload:{v_reason}",
+            strategy_used=strategy,
+            dry_run=dry_run,
+            linkedin_session=linkedin_session,
+        )
         return True
 
     detail = _log_detail(stage_key, strategy, ores.source)
     msg_var = f"{body[:180]}|{detail}"[:500]
+    _fu_prefix = f"followup_dm_{stage_num}|"
 
     if dry_run:
         log_action(
@@ -1187,21 +1207,27 @@ def _send_followup_dm(
             account_id=account.account_id,
             action_type="dm",
             status="ok",
-            detail=f"dry_run|{stage_key}|" + detail,
+            detail=f"dry_run|{phantom_log_action}|{stage_key}|" + detail,
             strategy_used=strategy,
             message_variant=msg_var,
             dry_run=True,
             linkedin_session=linkedin_session,
             phantom_response=ores.raw_llm_snippet[:3500],
         )
-        logger.info("[dry-run] %s lead=%s account=%s", stage_key, lead_id, account.account_id)
+        logger.info(
+            "[dry-run] %s (followup_dm_%s) lead=%s account=%s",
+            phantom_log_action,
+            stage_num,
+            lead_id,
+            account.account_id,
+        )
     else:
         phantom_summary = ""
         ok_pb = False
         cid = ""
         result: dict[str, Any] = {}
         _log_phantom_before(
-            stage_key,
+            phantom_log_action,
             account_id=account.account_id,
             agent_id=agent_id,
             lead_id=lead_id,
@@ -1211,9 +1237,10 @@ def _send_followup_dm(
         is_dedupe_skip = False
         is_not_connected = False
         is_poll_timeout = False
+        raw_done = False
         try:
             result, cid = pb.run_agent(
-                agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=bonus_arg
+                agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=None
             )
             is_poll_timeout = is_synthetic_polling_timeout_result(result)
             if is_poll_timeout:
@@ -1226,7 +1253,7 @@ def _send_followup_dm(
                 phantom_summary = base_sum
             else:
                 raw_done = isinstance(result, dict) and result.get("status") == "finished"
-                out_rows = []
+                out_rows: list[dict[str, Any]] = []
                 if raw_done and cid:
                     try:
                         out_rows = list(pb.fetch_output(cid) or [])
@@ -1249,7 +1276,7 @@ def _send_followup_dm(
                 )
                 ok_pb = bool(raw_done and not is_not_connected and not is_dedupe_skip)
             _log_phantom_after(
-                stage_key,
+                phantom_log_action,
                 account_id=account.account_id,
                 agent_id=agent_id,
                 lead_id=lead_id,
@@ -1257,14 +1284,34 @@ def _send_followup_dm(
                 container_id=cid,
                 summary=phantom_summary,
             )
+            if is_not_connected:
+                logger.info(
+                    "Phantombuster %s: not 1st-degree / cannot message lead=%s",
+                    phantom_log_action,
+                    lead_id,
+                )
+            if is_dedupe_skip:
+                logger.info("Phantombuster %s: dedupe/already processed lead=%s", phantom_log_action, lead_id)
+            logger.info(
+                "Phantombuster %s finished=%s not_connected=%s ok=%s poll_timeout=%s container=%s account=%s lead=%s",
+                phantom_log_action,
+                raw_done,
+                is_not_connected,
+                ok_pb,
+                is_poll_timeout,
+                cid,
+                account.account_id,
+                lead_id,
+            )
         except Exception as e:
             ok_pb = False
             result = {}
             is_not_connected = False
             is_poll_timeout = False
+            is_dedupe_skip = False
             phantom_summary = format_phantom_api_error(e)
             _log_phantom_after(
-                stage_key,
+                phantom_log_action,
                 account_id=account.account_id,
                 agent_id=agent_id,
                 lead_id=lead_id,
@@ -1272,21 +1319,21 @@ def _send_followup_dm(
                 container_id=cid,
                 summary=phantom_summary,
             )
-            logger.exception("Follow-up DM phantom failed lead=%s", lead_id)
+            logger.exception("Follow-up DM (Message Sender) phantom failed lead=%s", lead_id)
         if is_poll_timeout:
-            _fu_d = f"{stage_key}:pb_polling_timeout|" + detail
+            _fu_d = f"{_fu_prefix}{stage_key}:pb_polling_timeout|" + detail
             _fu_st = "error"
         elif is_not_connected:
-            _fu_d = f"{stage_key}:pb_not_connected_yet|" + detail
+            _fu_d = f"{_fu_prefix}{stage_key}:pb_not_connected_yet|" + detail
             _fu_st = "skipped"
         elif is_dedupe_skip:
-            _fu_d = f"{stage_key}:pb_dedupe_already_processed|" + detail
+            _fu_d = f"{_fu_prefix}{stage_key}:pb_dedupe_already_processed|" + detail
             _fu_st = "skipped"
         elif ok_pb:
-            _fu_d = f"{stage_key}:pb_finished|" + detail
+            _fu_d = f"{_fu_prefix}{stage_key}:pb_finished|" + detail
             _fu_st = "ok"
         else:
-            _fu_d = f"{stage_key}:pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
+            _fu_d = f"{_fu_prefix}{stage_key}:pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
             _fu_st = "error"
         log_action(
             conn,

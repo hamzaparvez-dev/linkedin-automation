@@ -151,6 +151,38 @@ Adjust path, user, and logging directory. Load the same environment as manual ru
 
 **Phantombuster “input already processed”:** when the connect/DM phantom skips a line (dedupe memory) but the container still finishes, the app logs `action_log.status=skipped` with `pb_dedupe_already_processed`. The lead is not promoted to `INVITED` unless **`DEDUPE_CONNECT_ASSUME_INVITED=true`** in `.env` (use only when a prior connect really exists; false positives are possible with empty sheets / file mode). Polling the result-object API uses a **fast 3s interval** for the first few minutes, then 30s; if `PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES` is exceeded without a terminal `status`, the app logs `pb_polling_timeout` (distinct from a generic `pb_error`). In the Phantombuster UI, set **file management to “Combine files”** (not “Delete previous files”) for stable dedupe, and use fresh lead URLs when possible.
 
+#### Production: Phantombuster Ops
+
+**Combine files**
+
+In each Phantombuster agent’s file / spreadsheet settings, use **Combine files** (append) instead of **Delete previous files**. The latter wipes phantom-side input history and makes dedupe and debugging harder; combine mode keeps a stable stream for the same account while the app’s SQLite state remains the source of truth for lead progression.
+
+**Duplicating agents (clear polluted memory)**
+
+Phantombuster agents retain execution-side “memory” (e.g. lines already seen). If you see repeated false **`pb_dedupe_already_processed`** outcomes or a corrupted input sheet, **duplicate** the connect or Message Sender agent in the Phantombuster UI to obtain a **new agent id** with a clean slate. Then update that identity in **`config/accounts.json`**: set **`phantombuster_connect_agent_id`** and/or **`phantombuster_dm_agent_id`** to the new ids (see [`config/accounts.example.json`](config/accounts.example.json)). Restart the engagement worker (e.g. `pm2 restart leadgen-engagement`). You do not need to reset the SQLite database for this; only the Phantombuster launch target changes per account.
+
+**Soft reset (SQL) — rewind stuck leads without wiping the database**
+
+The app’s allowed status moves are defined in [`core/state_machine.py`](core/state_machine.py). For **one-off operator repairs**, use schema-aware `UPDATE` statements against **existing** columns only: run `PRAGMA table_info(leads);` on your database file (and `PRAGMA table_info(action_log);` if you touch logs) so you do not reference columns your build has not migrated yet. Work on a **copy** of the DB or a **backup** first.
+
+| Symptom | Pattern |
+|--------|---------|
+| Lead stuck after **not 1st degree** / optimistic DM | Clear the retry clock so the runner can try again: `UPDATE leads SET next_dm_attempt_at = NULL, updated_at = ? WHERE lead_id = ?;` (use the same ISO timestamp style as elsewhere in the row). |
+| Lead in a **bad terminal / wrong step** and you need to re-open | Move along allowed edges (e.g. to **`FAILED`**, then to **`QUALIFIED`** / **`ASSIGNED_TO_ACCOUNT`**) and fix **`account_id`** and timestamps as needed—never `DELETE` the whole `leads` table. |
+
+Example **minimal unblock** (replace placeholders; confirm column names with `PRAGMA table_info(leads)`):
+
+```sql
+-- Single-lead retry after pb_not_connected_yet / cooldown
+UPDATE leads
+SET
+  next_dm_attempt_at = NULL,
+  updated_at = '2026-01-15T12:00:00+00:00'
+WHERE lead_id = 'your-lead-id';
+```
+
+To **rewind** an outbound step that the in-app state machine does not allow reversing in one hop (e.g. you need to retry a first DM from an advanced state), use an intermediate state such as **`FAILED`** and then re-promote per [`core/repository.py`](core/repository.py) / your runbook, rather than bulk-deleting tables.
+
 ---
 
 ## 1. Executive summary
