@@ -1,7 +1,7 @@
 """
 main.py — PRD v2 orchestrator (multi-account, SQLite, behavior controller).
 
-Default: full pipeline (Apollo → Phantombuster → score → assign → metrics).
+Default: full pipeline (Apollo → score → assign → metrics; no Phantombuster profile scraper).
 
 Legacy Clay / Expandi path: --legacy-full (requires ENABLE_LEGACY_OUTREACH=true for Expandi).
 """
@@ -39,7 +39,6 @@ from core.repository import get_connection, ingest_inbound_reply, promote_to_con
 from integrations.apollo_client import ApolloClient
 from integrations.clay_client import ClayClient
 from integrations.outreach_client import OutreachDispatcher
-from integrations.phantombuster_client import PhantombusterClient
 from core.lead_scorer import LeadScorer
 from lead_extraction.pipeline import run_apollo_web3_extraction
 from core.daily_automation import run_daily_automation
@@ -102,11 +101,11 @@ def step2_clay(leads: list[dict]) -> None:
     ClayClient().push_leads(leads)
 
 
-def step3_phantombuster(leads: list[dict]) -> list[dict]:
-    logger.info("━━━ STEP 3: Phantombuster LinkedIn Enrichment ━━━")
-    enriched = PhantombusterClient().enrich_leads(leads)
-    _save_csv(enriched, ENRICHED_LEADS_CSV)
-    return enriched
+def step3_save_enriched_snapshot(leads: list[dict]) -> list[dict]:
+    """Write leads to ENRICHED_LEADS_CSV for the legacy CSV scoring path (no PB profile scraper)."""
+    logger.info("━━━ STEP 3: Save enriched snapshot (same fields as input) ━━━")
+    _save_csv(leads, ENRICHED_LEADS_CSV)
+    return leads
 
 
 def step4_score(leads: list[dict]) -> list[dict]:
@@ -128,7 +127,6 @@ def run_legacy_full_pipeline(
     target_leads: int,
     campaign_id: str,
     skip_apollo: bool,
-    skip_enrichment: bool,
 ) -> None:
     if not ENABLE_LEGACY_OUTREACH:
         logger.warning("Legacy outreach disabled (ENABLE_LEGACY_OUTREACH=false). Step 5 may fail without keys.")
@@ -140,10 +138,7 @@ def run_legacy_full_pipeline(
         logger.error("No leads extracted.")
         return
     step2_clay(leads)
-    if skip_enrichment and os.path.exists(ENRICHED_LEADS_CSV):
-        leads = _load_csv(ENRICHED_LEADS_CSV)
-    else:
-        leads = step3_phantombuster(leads)
+    leads = step3_save_enriched_snapshot(leads)
     qualified = step4_score(leads)
     if not qualified:
         logger.warning("No qualified leads.")
@@ -195,13 +190,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--resume", action="store_true", help="Reserved for checkpoint resume (partial)")
     parser.add_argument("--skip-apollo", action="store_true")
-    parser.add_argument("--skip-enrichment", action="store_true")
     parser.add_argument("--legacy-full", action="store_true", help="Old CSV + Clay + Expandi/Waalaxy flow")
     parser.add_argument("--outreach-only", action="store_true", help="Legacy daily SaaS outreach from CSV")
     parser.add_argument(
         "--daily-automation",
         action="store_true",
-        help="Daily job: Apollo Web3 → merge CSV → SQLite import → PB profile enrich (capped) → score → assign → engagement (see core/daily_automation.py, DAILY_* env).",
+        help="Daily job: Apollo Web3 → merge CSV → SQLite import → score → assign → engagement (see core/daily_automation.py, DAILY_* env).",
     )
     parser.add_argument("--schedule", action="store_true")
     parser.add_argument("--promote-connected", type=str, default="", metavar="LEAD_ID")
@@ -313,7 +307,6 @@ if __name__ == "__main__":
             target_leads=args.target,
             campaign_id=args.campaign,
             skip_apollo=args.skip_apollo,
-            skip_enrichment=args.skip_enrichment,
         )
         sys.exit(0)
 
@@ -336,7 +329,7 @@ if __name__ == "__main__":
             )
 
         logger.info(
-            "Scheduler: daily automation at %s (Apollo Web3 + merge + SQLite + PB enrich + engagement). "
+            "Scheduler: daily automation at %s (Apollo Web3 + merge + SQLite + score + engagement). "
             "Override time with DAILY_SCHEDULE_TIME=HH:MM",
             daily_time,
         )
@@ -349,7 +342,6 @@ if __name__ == "__main__":
     run_full_pipeline_v2(
         target_leads=args.target,
         skip_apollo=args.skip_apollo,
-        skip_enrichment=args.skip_enrichment,
         resume=args.resume,
         accounts_path=args.accounts_config,
     )

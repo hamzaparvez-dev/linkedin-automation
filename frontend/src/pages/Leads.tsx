@@ -122,9 +122,9 @@ export function Leads() {
         </div>
         <p className="muted">
           <strong>Empty LinkedIn / email?</strong> Apollo <code>api_search</code> alone is incomplete.
-          Use <code>APOLLO_EXTRACT_BULK_MATCH=true</code> (default) when scraping, run the pipeline{' '}
-          <strong>without</strong> <code>--skip-enrichment</code> for Phantombuster signals, and ensure
-          leads reach <code>QUALIFIED</code> for <code>account_id</code> assignment.
+          Use <code>APOLLO_EXTRACT_BULK_MATCH=true</code> (default) when scraping, run the main pipeline so
+          NEW leads with a LinkedIn URL are promoted to ENRICHED and scored, and ensure leads reach{' '}
+          <code>QUALIFIED</code> for <code>account_id</code> assignment.
         </p>
         <div className="filters">
           <input

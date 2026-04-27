@@ -215,34 +215,6 @@ def _bool_to_int(v: Any) -> Optional[int]:
     return None
 
 
-def update_lead_enrichment(conn: sqlite3.Connection, lead_id: str, fields: dict[str, Any]) -> None:
-    row = conn.execute("SELECT status FROM leads WHERE lead_id=?", (lead_id,)).fetchone()
-    if not row:
-        return
-    prev = row["status"]
-    now = utc_now_iso()
-    assert_transition(prev, "ENRICHED")
-    conn.execute(
-        """
-        UPDATE leads SET
-            connection_count=?,
-            active_last_30_days=?,
-            activity_level=?,
-            status='ENRICHED',
-            updated_at=?
-        WHERE lead_id=?
-        """,
-        (
-            fields.get("connection_count"),
-            1 if fields.get("active_last_30_days") else 0,
-            fields.get("activity_level"),
-            now,
-            lead_id,
-        ),
-    )
-    conn.commit()
-
-
 def apply_score_to_lead(
     conn: sqlite3.Connection,
     lead_id: str,
@@ -271,18 +243,10 @@ def apply_score_to_lead(
     conn.commit()
 
 
-def fetch_leads_for_enrichment(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return list(
-        conn.execute(
-            "SELECT * FROM leads WHERE status='NEW' AND linkedin_url != '' ORDER BY created_at"
-        )
-    )
-
-
 def promote_new_with_linkedin_to_enriched_for_scoring(conn: sqlite3.Connection) -> int:
     """
-    When Phantombuster enrichment is skipped, still allow scoring for leads that already
-    have a LinkedIn URL (e.g. from Apollo bulk_match).
+    Promote NEW → ENRICHED when a LinkedIn URL is present (e.g. from Apollo bulk_match) so
+    scoring can run without a separate profile-scraper step.
     """
     rows = list(
         conn.execute(

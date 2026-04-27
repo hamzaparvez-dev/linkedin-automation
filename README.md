@@ -26,7 +26,7 @@ The platform is an **autonomous, multi-account LinkedIn lead-generation and enga
 | **Persistence** | **SQLite** — `leads`, `accounts_meta`, `action_log`, `metrics_daily`, … |
 | **Operator UI** | **React + Vite** (`frontend/`) — hash routes (`/#/`, `/#/leads`, …) |
 
-High-level flow: **discover / import leads → enrich & score → qualify → assign to accounts → connect / DM / follow-ups** with logs and metrics suitable for agency reporting.
+High-level flow: **discover / import leads → score → qualify → assign to accounts → connect / DM / follow-ups** with logs and metrics suitable for agency reporting.
 
 ### OM-2. Core features and safety mechanisms
 
@@ -74,7 +74,7 @@ NEW → ENRICHED → QUALIFIED → ASSIGNED_TO_ACCOUNT → INVITED → CONNECTED
 | Stage | Meaning |
 |--------|---------|
 | **NEW** | Ingested; may lack enrichment. |
-| **ENRICHED** | LinkedIn / PB signals attached where applicable. |
+| **ENRICHED** | LinkedIn URL present (and optional fields for scoring when available). |
 | **QUALIFIED** | Meets score threshold; eligible for assignment. |
 | **ASSIGNED_TO_ACCOUNT** | Bound to one `account_id` for outreach. |
 | **INVITED** | Connect request sent (Phantombuster). |
@@ -145,7 +145,7 @@ For a **VPS-style cron job** (recommended for predictable wake-ups without keepi
 
 Adjust path, user, and logging directory. Load the same environment as manual runs (e.g. `Environment=` in systemd, or `set -a; source .env; set +a` in a wrapper script if not using systemd `EnvironmentFile`).
 
-> **Note:** `ecosystem.config.js` currently runs **engagement-only**. The **full daily pipeline** (Apollo + merge + enrich + assign + engagement) is **`python main.py --daily-automation`** — wire **cron** or **separate PM2 app** for that if engagement PM2 alone is not sufficient for your agency workflow.
+> **Note:** `ecosystem.config.js` currently runs **engagement-only**. The **full daily pipeline** (Apollo + merge + score + assign + engagement) is **`python main.py --daily-automation`** — wire **cron** or **separate PM2 app** for that if engagement PM2 alone is not sufficient for your agency workflow.
 
 **Apify / dashboard-only leads (no Apollo merge file):** set `DAILY_SKIP_APOLLO=true` and `DAILY_SKIP_MERGED_CSV=true` so the run relies on leads already in SQLite (e.g. from `POST /api/leads/import`). Use `APIFY_IMPORT_FLOOR_SCORE` (same value as `MIN_SCORE_THRESHOLD` is typical) so dashboard imports can become `QUALIFIED` without full enrichment. **First DMs** do not require a separate “connections export” Phantombuster: after **`OPTIMISTIC_FIRST_DM_DAYS`**, the DM phantom may be sent while the lead is still **INVITED**; if the phantom output says not 1st degree / cannot message, the app logs `skipped` (`pb_not_connected_yet`), sets `next_dm_attempt_at` using **`DM_NOT_CONNECTED_COOLDOWN_DAYS`**, and retries later.
 
@@ -158,9 +158,9 @@ Adjust path, user, and logging directory. Load the same environment as manual ru
 Build a **multi-account, low-risk** LinkedIn automation system that:
 
 1. Generates **ICP-qualified** leads via **Apollo.io**
-2. Enriches **LinkedIn signals** via **Phantombuster**
-3. **Scores and segments** leads
-4. Executes **human-like** outreach across **multiple LinkedIn identities** (3–5 accounts)
+2. **Scores and segments** leads (connection/activity bonus points apply only when those fields exist in the DB; there is no separate Phantombuster profile-scraper step)
+3. **Assigns** qualified leads to accounts
+4. Executes **human-like** outreach across **multiple LinkedIn identities** (3–5 accounts) via Auto-Connect / Auto-DM phantoms
 5. Uses **controlled AI-assisted** personalization (not fully autonomous AI)
 6. **Tracks replies**, conversations, and outcomes for **campaign intelligence**
 
@@ -291,13 +291,13 @@ The system supports **3–5 LinkedIn accounts**. Each account is an **independen
 | `title` | Job title |
 | `linkedin_url` | Canonical normalized URL |
 
-### 5.2 Enrichment (Phantombuster)
+### 5.2 Enrichment (data available for scoring)
 
-**Extract (minimum):**
+**Optional signals** (when present on the lead row, e.g. from Apollo or manual fields):
 
 - Connection count  
-- Activity (e.g. recent posts / activity window)  
-- Profile strength / signals needed for scoring and messaging context  
+- Activity flags (e.g. last-30-days)  
+- Title, company, industry — used by [`core/lead_scorer.py`](core/lead_scorer.py)  
 
 ### 5.3 Scoring
 
@@ -324,7 +324,7 @@ Leads transition only through **explicit, logged** events. Invalid transitions a
 ```mermaid
 stateDiagram-v2
   [*] --> NEW
-  NEW --> ENRICHED: PB profile OK
+  NEW --> ENRICHED: linkedin_url + promote for scoring
   ENRICHED --> QUALIFIED: score meets threshold
   QUALIFIED --> ASSIGNED_TO_ACCOUNT: exclusive account
   ASSIGNED_TO_ACCOUNT --> INVITED: connect sent
@@ -618,8 +618,8 @@ Outputs: **operations dashboard** (see below) + **exportable aggregates** (CSV/J
 
 | Command | Purpose |
 |---------|---------|
-| `--full-run` | Apollo discovery → enrichment → score → assign → queue |
-| `--daily-automation` | Pipeline: optional Apollo (`DAILY_SKIP_APOLLO`) → optional merged CSV import (`DAILY_SKIP_MERGED_CSV`) → optional PB profile enrich → score → assign → engagement (`DAILY_*` / `APIFY_IMPORT_FLOOR_SCORE`; use with cron or `--schedule`) |
+| `--full-run` | Apollo discovery → promote ENRICHED → score → assign → queue |
+| `--daily-automation` | Pipeline: optional Apollo (`DAILY_SKIP_APOLLO`) → optional merged CSV import (`DAILY_SKIP_MERGED_CSV`) → score → assign → engagement (`DAILY_*` / `APIFY_IMPORT_FLOOR_SCORE`; use with cron or `--schedule`) |
 | `--engagement-only` | Behavior controller + Phantombuster actions from current state |
 | `--multi-account-run` | Engagement across all configured accounts in one supervised run |
 | `--dry-run` | Plan actions; no PB launch (overrides env `DRY_RUN`) |
@@ -671,10 +671,9 @@ Open `http://127.0.0.1:8080/` — the app uses **hash routing** (`/#/`, `/#/lead
 Apollo **People API Search** (`api_search`) returns **partial rows** by design: you often do **not** get a public LinkedIn URL or email until you call **`people/bulk_match`**, which uses Apollo **credits** but is what makes rows usable for this repo.
 
 - **`APOLLO_EXTRACT_BULK_MATCH`** defaults to **`true`** in [`integrations/apollo_client.py`](integrations/apollo_client.py): each page of search results is enriched so **`linkedin_url`** and **`email`** (when Apollo exposes them) are written to SQLite via [`core/repository.py`](core/repository.py). Set `APOLLO_EXTRACT_BULK_MATCH=false` in `.env` only if you want to save credits and accept incomplete rows.
-- **Phantombuster** profile enrichment ([`integrations/phantombuster_client.py`](integrations/phantombuster_client.py)) still requires a **non-empty LinkedIn URL** on the lead. Do **not** use `--skip-enrichment` on a full production run if you want connection counts and activity signals for scoring.
-- **Scoring + assignment:** only **`QUALIFIED`** leads get **`account_id`** from [`distribute_qualified_leads`](core/repository.py). That requires scores above **`MIN_SCORE_THRESHOLD`** after enrichment (see [`core/lead_scorer.py`](core/lead_scorer.py)). If you skipped enrichment, leads that already have a LinkedIn URL from Apollo are promoted to **`ENRICHED`** so scoring can still run; leads with **no** URL stay **`NEW`** and cannot be used for LinkedIn automation.
+- **Scoring + assignment:** only **`QUALIFIED`** leads get **`account_id`** from [`distribute_qualified_leads`](core/repository.py). That requires scores above **`MIN_SCORE_THRESHOLD`** (see [`core/lead_scorer.py`](core/lead_scorer.py)). Leads that have a LinkedIn URL from Apollo are promoted **`NEW` → `ENRICHED`** so scoring can run; leads with **no** URL stay **`NEW`** and cannot be used for LinkedIn automation.
 
-Re-run the pipeline after changing env flags so the DB is repopulated: `python main.py --target …` (omit `--skip-enrichment` for the full path).
+Re-run the pipeline after changing env flags so the DB is repopulated: `python main.py --target …`.
 
 ### 18.2 Strict outreach CSV (ICP export)
 
@@ -755,8 +754,7 @@ Success is measured by **conversation quality and account safety**, not raw send
 | AI variation + validation | §10 | `core/ai_engine.py` (optional `OPEN_ROUTER_API_KEY`) |
 | Reply classification (keyword MVP) | §11 | `core/reply_handler.py` |
 | Campaign intelligence export | §14, §17 | `core/metrics.py` |
-| Phantombuster profile enrich | §5.2 | `integrations/phantombuster_client.py` |
-| Connect + DM via PB | §8 | `core/engagement_runner.py` (argument shape must match your phantoms) |
+| Connect + DM via PB | §8 | `core/engagement_runner.py`, `integrations/phantombuster_client.py` (argument shape must match your phantoms) |
 | Full pipeline v2 | §1 | `core/pipeline.py`, default `python main.py` |
 | CLI (§18) | §18 | `--engagement-only`, `--multi-account-run`, `--dry-run`, `--resume`, `--promote-connected`, `--intelligence-export`, `--ingest-reply` |
 | Strict ICP outreach export | §18.2 | `lead_extraction/outreach_ready_filter.py`, `scripts/export_icp_outreach_csv.py`; optional `APOLLO_WEB3_STRICT_OUTREACH` in `lead_extraction/pipeline.py` |

@@ -1,4 +1,4 @@
-"""PRD v2 orchestration: Apollo → Phantombuster → score → assign → exports."""
+"""PRD v2 orchestration: Apollo (optional) → promote ENRICHED for scoring → score → assign → exports. No Phantombuster profile scraper."""
 
 from __future__ import annotations
 
@@ -21,16 +21,13 @@ from core.metrics import export_intelligence
 from core.repository import (
     apply_score_to_lead,
     distribute_qualified_leads,
-    fetch_leads_for_enrichment,
     fetch_leads_for_scoring,
     promote_new_with_linkedin_to_enriched_for_scoring,
     row_to_lead_dict,
     sync_accounts_meta,
-    update_lead_enrichment,
     upsert_lead_new,
 )
 from integrations.apollo_client import ApolloClient
-from integrations.phantombuster_client import PhantombusterClient
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +49,6 @@ def run_full_pipeline_v2(
     *,
     target_leads: int = 1000,
     skip_apollo: bool = False,
-    skip_enrichment: bool = False,
     resume: bool = False,
     accounts_path: Optional[str] = None,
 ) -> None:
@@ -73,45 +69,27 @@ def run_full_pipeline_v2(
         conn.commit()
         logger.info("Upserted %d leads into SQLite (campaign=%s)", len(leads), campaign_id)
 
-    if skip_enrichment:
-        logger.info("Skipping Phantombuster enrichment")
-        promoted = promote_new_with_linkedin_to_enriched_for_scoring(conn)
-        if promoted:
-            logger.info(
-                "Promoted %s NEW lead(s) with LinkedIn URL → ENRICHED for scoring (PB skipped)",
-                promoted,
-            )
-        stuck = conn.execute(
-            "SELECT COUNT(*) AS c FROM leads WHERE status='NEW' AND TRIM(linkedin_url)=''"
-        ).fetchone()["c"]
-        if stuck:
-            logger.warning(
-                "%s NEW lead(s) have no LinkedIn URL — engagement cannot run until "
-                "Apollo bulk_match is enabled (APOLLO_EXTRACT_BULK_MATCH=true) or leads are enriched.",
-                stuck,
-            )
-    else:
-        pb = PhantombusterClient()
-        rows = fetch_leads_for_enrichment(conn)
-        batch = [row_to_lead_dict(r) for r in rows]
-        if batch:
-            enriched = pb.enrich_leads(batch)
-            for src, en in zip(rows, enriched):
-                lid = src["lead_id"]
-                update_lead_enrichment(
-                    conn,
-                    lid,
-                    {
-                        "connection_count": en.get("connection_count"),
-                        "active_last_30_days": en.get("active_last_30_days"),
-                        "activity_level": en.get("activity_level"),
-                    },
-                )
-            _export_csv(
-                conn,
-                "SELECT * FROM leads WHERE status='ENRICHED' OR status='QUALIFIED'",
-                ENRICHED_LEADS_CSV,
-            )
+    logger.info("Profile scraper not used; promoting NEW leads with LinkedIn URL to ENRICHED for scoring")
+    promoted = promote_new_with_linkedin_to_enriched_for_scoring(conn)
+    if promoted:
+        logger.info(
+            "Promoted %s NEW lead(s) with LinkedIn URL → ENRICHED for scoring",
+            promoted,
+        )
+    _export_csv(
+        conn,
+        "SELECT * FROM leads WHERE status='ENRICHED' OR status='QUALIFIED'",
+        ENRICHED_LEADS_CSV,
+    )
+    stuck = conn.execute(
+        "SELECT COUNT(*) AS c FROM leads WHERE status='NEW' AND TRIM(linkedin_url)=''"
+    ).fetchone()["c"]
+    if stuck:
+        logger.warning(
+            "%s NEW lead(s) have no LinkedIn URL — engagement cannot run until "
+            "Apollo bulk_match is enabled (APOLLO_EXTRACT_BULK_MATCH=true).",
+            stuck,
+        )
 
     scorer = LeadScorer()
     for r in fetch_leads_for_scoring(conn):
@@ -140,4 +118,4 @@ def run_full_pipeline_v2(
     conn.close()
     logger.info("Campaign intelligence: %s", paths)
     if resume:
-        logger.info("Resume flag set — checkpoints can extend enrichment skip (future).")
+        logger.info("Resume flag set (checkpoint / future use).")

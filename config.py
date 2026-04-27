@@ -34,7 +34,6 @@ CLAY_BASE_URL = "https://api.clay.com/v1"
 # ─── Phantombuster ────────────────────────────────────────────────────────────
 PHANTOMBUSTER_API_KEY = os.getenv("PHANTOMBUSTER_API_KEY", "YOUR_PHANTOMBUSTER_API_KEY")
 PHANTOMBUSTER_BASE_URL = "https://api.phantombuster.com/api/v2"
-PHANTOMBUSTER_AGENT_ID = os.getenv("PHANTOMBUSTER_AGENT_ID", "YOUR_AGENT_ID")
 PHANTOMBUSTER_CONNECT_AGENT_ID = os.getenv("PHANTOMBUSTER_CONNECT_AGENT_ID", "")
 PHANTOMBUSTER_DM_AGENT_ID = os.getenv("PHANTOMBUSTER_DM_AGENT_ID", "")
 # Engagement phantom argument shape: singular = profileUrl (string) + numberOfAddsPerLaunch;

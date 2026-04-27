@@ -1,8 +1,8 @@
 """
 Daily autonomous job: Apollo Web3 scrape → merge CSV → SQLite import →
-optional Phantombuster profile enrichment → score → assign → engagement.
+score → assign → engagement. (Phantombuster profile scraper removed.)
 
-Designed for cron/systemd (single-instance lock, bounded PB batch).
+Designed for cron/systemd (single-instance lock).
 """
 
 from __future__ import annotations
@@ -30,16 +30,13 @@ from core.pipeline import _export_csv
 from core.repository import (
     apply_score_to_lead,
     distribute_qualified_leads,
-    fetch_leads_for_enrichment,
     fetch_leads_for_scoring,
     promote_new_with_linkedin_to_enriched_for_scoring,
     row_to_lead_dict,
     sync_accounts_meta,
-    update_lead_enrichment,
     upsert_lead_new,
 )
 from core.engagement_runner import run_engagement
-from integrations.phantombuster_client import PhantombusterClient
 from lead_extraction.pipeline import run_apollo_web3_extraction
 
 logger = logging.getLogger(__name__)
@@ -171,42 +168,6 @@ def import_merged_lookup_csv(
     return n
 
 
-def _run_profile_enrichment_limited(conn, max_leads: int) -> int:
-    from config import PHANTOMBUSTER_AGENT_ID
-
-    aid = (PHANTOMBUSTER_AGENT_ID or "").strip()
-    if not aid or max_leads <= 0:
-        return 0
-    rows = fetch_leads_for_enrichment(conn)[:max_leads]
-    if not rows:
-        return 0
-    pb = PhantombusterClient()
-    batch = [row_to_lead_dict(r) for r in rows]
-    try:
-        enriched = pb.enrich_leads(batch)
-    except Exception:
-        logger.exception("Phantombuster profile enrichment failed")
-        return 0
-    updated = 0
-    for src, en in zip(rows, enriched):
-        lid = src["lead_id"]
-        try:
-            update_lead_enrichment(
-                conn,
-                lid,
-                {
-                    "connection_count": en.get("connection_count"),
-                    "active_last_30_days": en.get("active_last_30_days"),
-                    "activity_level": en.get("activity_level"),
-                },
-            )
-            updated += 1
-        except ValueError:
-            logger.debug("Skip enrichment update for %s (state)", lid)
-    logger.info("Phantombuster enrichment updated %s leads (cap=%s)", updated, max_leads)
-    return updated
-
-
 def run_daily_automation(
     *,
     accounts_path: str | None = None,
@@ -217,8 +178,6 @@ def run_daily_automation(
     One end-to-end pass. Env:
       DAILY_SKIP_APOLLO — skip Apollo Web3 (e.g. no credits)
       DAILY_APOLLO_TARGET — new rows to collect per run (default 25)
-      DAILY_SKIP_PB_PROFILE — skip PB profile scraper; promote LinkedIn-only NEW → ENRICHED
-      DAILY_PB_ENRICH_MAX — max NEW leads to send to PB per run (default 40)
       max_leads_per_account — cap engagement actions per account (default ENGAGEMENT_MAX_LEADS_PER_ACCOUNT).
     """
     with _single_instance_lock() as proceed:
@@ -252,10 +211,6 @@ def run_daily_automation(
                 import_merged_lookup_csv(conn, MERGED_CSV, campaign_id=doc.campaign_id)
             else:
                 logger.info("DAILY_SKIP_MERGED_CSV: skip merged lookup CSV import")
-
-            if not _env_bool("DAILY_SKIP_PB_PROFILE", "false"):
-                cap = _env_int("DAILY_PB_ENRICH_MAX", 40)
-                _run_profile_enrichment_limited(conn, cap)
 
             promote_new_with_linkedin_to_enriched_for_scoring(conn)
 

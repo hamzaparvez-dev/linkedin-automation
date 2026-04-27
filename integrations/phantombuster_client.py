@@ -1,7 +1,7 @@
 """
 integrations/phantombuster_client.py
-Step 3 — Enrich leads with LinkedIn data via Phantombuster.
-Extracts: profile details, recent post activity, connection count.
+Phantombuster API client for Auto-Connect and Auto-DM: launch, poll, optional fetch-output.
+(LinkedIn profile-scraper batch enrichment was removed; engagement uses per-account agent ids from accounts.json / env.)
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from typing import Any, Optional
 import requests
 
 from config import (
-    PHANTOMBUSTER_AGENT_ID,
     PHANTOMBUSTER_API_KEY,
     PHANTOMBUSTER_BASE_URL,
     PHANTOMBUSTER_LOG_POLLING_DEBUG,
@@ -326,21 +325,6 @@ class PhantombusterClient:
         with lock:
             return self._launch_agent_unlocked(agent_id, argument, bonus_argument)
 
-    # ── Launch agent for a batch of LinkedIn URLs ─────────────────────────────
-    def launch_profile_scraper(self, linkedin_urls: list[str]) -> str:
-        """
-        Launch the LinkedIn Profile Scraper phantom.
-        Returns the launch container ID for polling.
-        """
-        argument = {
-            "spreadsheetUrl": "",
-            "profileUrls": linkedin_urls,
-            "numberOfLinesPerLaunch": len(linkedin_urls),
-            "extractActivities": True,
-            "activityDays": 30,
-        }
-        return self.launch_agent(PHANTOMBUSTER_AGENT_ID, argument)
-
     # ── Poll until agent finishes ──────────────────────────────────────────────
     def _log_polling_result(self, container_id: str, result: Any) -> None:
         if PHANTOMBUSTER_LOG_POLLING_DEBUG:
@@ -547,53 +531,6 @@ class PhantombusterClient:
                 return []
         return result_object or []
 
-    # ── High-level enrich function ─────────────────────────────────────────────
-    def enrich_leads(self, leads: list[dict]) -> list[dict]:
-        """
-        Takes leads with linkedin_url, enriches them with:
-        - connection_count
-        - active_last_30_days (bool)
-        - activity_level (string tag)
-        """
-        urls = [lead["linkedin_url"] for lead in leads if lead.get("linkedin_url")]
-        logger.info("[Phantombuster] Enriching %s LinkedIn profiles...", len(urls))
-
-        if not urls:
-            logger.warning("[Phantombuster] No LinkedIn URLs found — skipping enrichment.")
-            return leads
-
-        # Process in batches of 50 (Phantombuster rate limits)
-        batch_size = 50
-        enrichment_map: dict[str, dict] = {}
-
-        for i in range(0, len(urls), batch_size):
-            batch = urls[i : i + batch_size]
-            logger.info("[Phantombuster] Batch %s: %s URLs", i // batch_size + 1, len(batch))
-
-            container_id = self.launch_profile_scraper(batch)
-            result = self.wait_for_completion(container_id)
-
-            if result.get("status") == "finished":
-                output = self.fetch_output(container_id)
-                for profile in output:
-                    url = profile.get("linkedinUrl") or profile.get("profileUrl", "")
-                    enrichment_map[url] = self._parse_profile(profile)
-            else:
-                logger.warning("[Phantombuster] Batch failed — skipping enrichment for this batch.")
-
-            time.sleep(5)  # Brief pause between batches
-
-        # Merge enrichment data back into leads
-        enriched = []
-        for lead in leads:
-            li_url = lead.get("linkedin_url", "")
-            extra = enrichment_map.get(li_url, {})
-            lead.update(extra)
-            enriched.append(lead)
-
-        logger.info("[Phantombuster] Enrichment complete: %s profiles resolved.", len(enrichment_map))
-        return enriched
-
     def run_agent(
         self,
         agent_id: str,
@@ -608,33 +545,3 @@ class PhantombusterClient:
             cid = self._launch_agent_unlocked(agent_id, argument, bonus_argument)
             result = self.wait_for_completion(cid, timeout_minutes=timeout_minutes)
         return result, cid
-
-    # ── Parse a single Phantombuster profile result ───────────────────────────
-    def _parse_profile(self, profile: dict) -> dict:
-        connections_raw = profile.get("connections", "0")
-        try:
-            connections = int(str(connections_raw).replace("+", "").replace(",", "").strip())
-        except (ValueError, TypeError):
-            connections = 0
-
-        # Activity: Phantombuster returns a list of recent posts
-        recent_posts = profile.get("recentPosts", []) or []
-        active_30_days = len(recent_posts) > 0
-
-        if len(recent_posts) >= 8:
-            activity_level = "Very Active"
-        elif len(recent_posts) >= 3:
-            activity_level = "Active"
-        elif len(recent_posts) >= 1:
-            activity_level = "Occasionally Active"
-        else:
-            activity_level = "Not Active"
-
-        return {
-            "connection_count": connections,
-            "active_last_30_days": active_30_days,
-            "activity_level": activity_level,
-            "recent_post_count": len(recent_posts),
-            "profile_picture": profile.get("profilePicture", ""),
-            "about": profile.get("description", "")[:300],  # Truncate bio
-        }
