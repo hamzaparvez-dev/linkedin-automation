@@ -496,12 +496,12 @@ def _process_connects(
         lead = row_to_lead_dict(row)
         lead_id = lead["lead_id"]
         strategy = pick_strategy(conn, account)
-        ores: OutreachResult = compose_connect_note(lead, strategy)
+        ores: OutreachResult = compose_connect_note(lead, strategy, account=account)
         note = ores.text
         recent = recent_messages_for_repetition(conn, account.account_id, 30)
         ok, reason = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
         if not ok:
-            ores = compose_connect_note(lead, "direct")
+            ores = compose_connect_note(lead, "direct", account=account)
             note = ores.text
             ok, _ = validate_outreach_plaintext(note, stage="connect", recent_bodies=recent)
             if not ok:
@@ -772,11 +772,13 @@ def _process_dms(
         lead_id = lead["lead_id"]
         strategy = pick_strategy(conn, account)
         recent = recent_messages_for_repetition(conn, account.account_id, 50)
-        ores: OutreachResult = compose_from_template(lead, strategy, recent_bodies=recent)
+        ores: OutreachResult = compose_from_template(
+            lead, strategy, recent_bodies=recent, account=account
+        )
         body = ores.text
         ok, reason = validate_outreach_plaintext(body, stage="dm", recent_bodies=recent)
         if not ok:
-            ores = compose_from_template(lead, "direct", recent_bodies=recent)
+            ores = compose_from_template(lead, "direct", recent_bodies=recent, account=account)
             body = ores.text
             ok, _ = validate_outreach_plaintext(body, stage="dm", recent_bodies=recent)
             if not ok:
@@ -1159,11 +1161,15 @@ def _send_followup_dm(
     strategy = pick_strategy(conn, account)
     recent = recent_messages_for_repetition(conn, account.account_id, 50)
     stage_key = ("followup_1", "followup_2", "followup_3")[stage_num - 1]
-    ores: OutreachResult = compose_followup_message(lead, strategy, stage_num, recent_bodies=recent)
+    ores: OutreachResult = compose_followup_message(
+        lead, strategy, stage_num, recent_bodies=recent, account=account
+    )
     body = ores.text
     ok, reason = validate_outreach_plaintext(body, stage=stage_key, recent_bodies=recent)
     if not ok:
-        ores = compose_followup_message(lead, "direct", stage_num, recent_bodies=recent)
+        ores = compose_followup_message(
+            lead, "direct", stage_num, recent_bodies=recent, account=account
+        )
         body = ores.text
         ok, _ = validate_outreach_plaintext(body, stage=stage_key, recent_bodies=recent)
         if not ok:

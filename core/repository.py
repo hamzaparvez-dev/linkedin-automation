@@ -82,10 +82,10 @@ def upsert_lead_new(
         INSERT INTO leads (
             lead_id, apollo_person_id, linkedin_url, email, first_name, last_name, full_name,
             company_name, title, industry, location, years_experience,
-            connection_count, active_last_30_days, activity_level,
+            connection_count, active_last_30_days, activity_level, recent_activity,
             score, score_breakdown_json, status, campaign_id,
             message_history_json, created_at, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(lead_id) DO UPDATE SET
             apollo_person_id=excluded.apollo_person_id,
             linkedin_url=excluded.linkedin_url,
@@ -98,6 +98,7 @@ def upsert_lead_new(
             industry=excluded.industry,
             location=excluded.location,
             years_experience=excluded.years_experience,
+            recent_activity=excluded.recent_activity,
             updated_at=excluded.updated_at
         WHERE leads.status IN ('NEW','FAILED')
         """,
@@ -117,6 +118,7 @@ def upsert_lead_new(
             _int_or_none(lead.get("connection_count")),
             _bool_to_int(lead.get("active_last_30_days")),
             lead.get("activity_level"),
+            (str(lead.get("recent_activity") or "").strip() or None),
             int(lead.get("score") or 0),
             json.dumps(lead.get("score_breakdown") or {}),
             "NEW",
@@ -146,6 +148,7 @@ def insert_lead_csv_import(
     industry: Optional[str] = None,
     location: Optional[str] = None,
     years_experience: int = 0,
+    recent_activity: Optional[str] = None,
 ) -> bool:
     """
     Insert a single NEW lead from CSV/Apify import. Does not overwrite existing rows.
@@ -161,10 +164,10 @@ def insert_lead_csv_import(
         INSERT INTO leads (
             lead_id, apollo_person_id, linkedin_url, email, first_name, last_name, full_name,
             company_name, title, industry, location, years_experience,
-            connection_count, active_last_30_days, activity_level,
+            connection_count, active_last_30_days, activity_level, recent_activity,
             score, score_breakdown_json, status, account_id, campaign_id,
             message_history_json, created_at, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(lead_id) DO NOTHING
         """,
         (
@@ -183,6 +186,7 @@ def insert_lead_csv_import(
             None,
             None,
             None,
+            (str(recent_activity or "").strip() or None),
             0,
             json.dumps({}),
             "NEW",

@@ -19,6 +19,10 @@ ACCOUNT_CONFIG_PATH = os.getenv(
     "ACCOUNT_CONFIG_PATH",
     str(BASE_DIR / "config" / "accounts.json"),
 )
+# When true, all accounts use deterministic LinkedIn sequence copy from core/linkedin_sequence_templates.py
+USE_FIXED_LINKEDIN_SEQUENCE = os.getenv(
+    "USE_FIXED_LINKEDIN_SEQUENCE", ""
+).strip().lower() in ("1", "true", "yes", "on")
 
 # ─── Apollo.io ────────────────────────────────────────────────────────────────
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY", "YOUR_APOLLO_API_KEY")

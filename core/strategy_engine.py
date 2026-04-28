@@ -5,11 +5,12 @@ from __future__ import annotations
 import random
 import sqlite3
 from datetime import timedelta
-from typing import Any
+from typing import Any, Optional
 
-from config import STRATEGY_MAX_SHARE, STRATEGY_ROLLING_DAYS
+from config import STRATEGY_MAX_SHARE, STRATEGY_ROLLING_DAYS, USE_FIXED_LINKEDIN_SEQUENCE
 from core.accounts_loader import AccountConfig
 from core.ai_engine import OutreachResult, OutreachStage, generate_outreach_message, industry_signal
+from core.linkedin_sequence_templates import render_fixed_sequence
 
 STRATEGIES = ("direct", "curiosity", "value", "question", "observation")
 
@@ -60,12 +61,24 @@ def _lead_with_signal(lead: dict[str, Any]) -> dict[str, Any]:
     return ld
 
 
+def _use_fixed_sequence(account: Optional[AccountConfig]) -> bool:
+    if USE_FIXED_LINKEDIN_SEQUENCE:
+        return True
+    if account is not None and account.outreach_copy_mode == "linkedin_sequence_v1":
+        return True
+    return False
+
+
 def compose_from_template(
     lead: dict[str, Any],
     strategy: str,
     recent_bodies: list[str] | None = None,
+    *,
+    account: Optional[AccountConfig] = None,
 ) -> OutreachResult:
-    """First DM body via LLM (fallback static)."""
+    """First DM body via LLM (fallback static), or fixed linkedin_sequence_v1 templates."""
+    if _use_fixed_sequence(account):
+        return render_fixed_sequence("dm", lead)
     return generate_outreach_message(
         "dm",
         _lead_with_signal(lead),
@@ -74,8 +87,15 @@ def compose_from_template(
     )
 
 
-def compose_connect_note(lead: dict[str, Any], strategy: str) -> OutreachResult:
-    """Connection note via LLM (fallback static)."""
+def compose_connect_note(
+    lead: dict[str, Any],
+    strategy: str,
+    *,
+    account: Optional[AccountConfig] = None,
+) -> OutreachResult:
+    """Connection note via LLM (fallback static), or fixed linkedin_sequence_v1 templates."""
+    if _use_fixed_sequence(account):
+        return render_fixed_sequence("connect", lead)
     return generate_outreach_message(
         "connect",
         _lead_with_signal(lead),
@@ -89,11 +109,15 @@ def compose_followup_message(
     strategy: str,
     stage: int,
     recent_bodies: list[str] | None = None,
+    *,
+    account: Optional[AccountConfig] = None,
 ) -> OutreachResult:
     """stage 1–3 → followup_1 … followup_3 (calendar gaps from config.FOLLOW_UP_SCHEDULE)."""
     n = int(stage)
     stages: tuple[OutreachStage, OutreachStage, OutreachStage] = ("followup_1", "followup_2", "followup_3")
     st = stages[n - 1] if 1 <= n <= 3 else "followup_1"
+    if _use_fixed_sequence(account):
+        return render_fixed_sequence(st, lead)
     return generate_outreach_message(
         st,
         _lead_with_signal(lead),

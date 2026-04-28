@@ -63,6 +63,14 @@ _ALIASES: dict[str, tuple[str, ...]] = {
         "occupation",
     ),
     "industry": ("industry", "companyindustry", "sector"),
+    "recent_activity": (
+        "recent_activity",
+        "recentactivity",
+        "activity_snippet",
+        "activitysnippet",
+        "linkedin_activity",
+        "linkedinactivity",
+    ),
     "location": ("location", "address", "city", "country", "geo", "region"),
     "years_experience": (
         "years_experience",
@@ -142,6 +150,7 @@ def map_apify_csv_row(row: dict[str, str]) -> dict[str, Any] | None:
         "industry": _pick(row, "industry") or None,
         "location": _pick(row, "location") or None,
         "years_experience": _parse_years(_pick(row, "years_experience")),
+        "recent_activity": _pick(row, "recent_activity") or None,
     }
 
 
@@ -210,6 +219,7 @@ def import_apify_csv(
                 industry=mapped.get("industry"),
                 location=mapped.get("location"),
                 years_experience=int(mapped.get("years_experience") or 0),
+                recent_activity=mapped.get("recent_activity"),
             )
         except Exception as e:
             skipped += 1

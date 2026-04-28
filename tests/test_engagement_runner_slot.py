@@ -36,6 +36,7 @@ def _account(**kwargs: object) -> AccountConfig:
         phantombuster_connect_agent_id="111",
         phantombuster_dm_agent_id="222",
         profile_name="",
+        outreach_copy_mode="llm",
     )
     base.update(kwargs)
     return AccountConfig(**base)  # type: ignore[arg-type]

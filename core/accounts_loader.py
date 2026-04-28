@@ -28,6 +28,8 @@ class AccountConfig:
     phantombuster_connect_agent_id: str
     phantombuster_dm_agent_id: str
     profile_name: str
+    # "llm" = OpenRouter variation; "linkedin_sequence_v1" = exact templates + variable substitution only
+    outreach_copy_mode: str
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,9 @@ def load_accounts_document(path: str) -> AccountsDocument:
     for a in accounts_raw:
         dr = a.get("delay_range_sec") or [30, 180]
         lim = a.get("steady_daily_limits") or {}
+        _mode = str(a.get("outreach_copy_mode") or "llm").strip().lower()
+        if _mode not in ("llm", "linkedin_sequence_v1"):
+            _mode = "llm"
         accounts.append(
             AccountConfig(
                 account_id=str(a["account_id"]),
@@ -72,6 +77,7 @@ def load_accounts_document(path: str) -> AccountsDocument:
                     a.get("phantombuster_dm_agent_id") or ""
                 ).strip(),
                 profile_name=str(a.get("profile_name") or "").strip(),
+                outreach_copy_mode=_mode,
             )
         )
     logger.info("Loaded %d account(s) for campaign %s", len(accounts), campaign_id)
