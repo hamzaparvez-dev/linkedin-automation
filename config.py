@@ -98,6 +98,9 @@ OPTIMISTIC_FIRST_DM_DAYS = int((os.getenv("OPTIMISTIC_FIRST_DM_DAYS", "1") or "1
 DM_NOT_CONNECTED_COOLDOWN_DAYS = int(
     (os.getenv("DM_NOT_CONNECTED_COOLDOWN_DAYS", "2") or "2").strip() or 2
 )
+DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS = int(
+    (os.getenv("DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS", "3") or "3").strip() or 3
+)
 
 # ─── Legacy outreach (off by default, PRD v2) ─────────────────────────────────
 WAALAXY_API_KEY = os.getenv("WAALAXY_API_KEY", "")

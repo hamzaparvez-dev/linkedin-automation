@@ -11,6 +11,7 @@ from typing import Any, Optional
 from config import (
     ACCOUNT_CONFIG_PATH,
     DEDUPE_CONNECT_ASSUME_INVITED,
+    DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS,
     DM_NOT_CONNECTED_COOLDOWN_DAYS,
     ENGAGEMENT_AUTO_PAUSE_ACCOUNT_ON_PB_AUTH_FAILURE,
     ENGAGEMENT_MAX_LEADS_PER_ACCOUNT,
@@ -969,8 +970,19 @@ def _process_dms(
                 linkedin_session=linkedin_session,
                 phantom_response=_phantom_log(phantom_summary, ores),
             )
-            if is_not_connected:
-                schedule_next_dm_retry_in_days(conn, lead_id, DM_NOT_CONNECTED_COOLDOWN_DAYS)
+            lead_status = str(row["status"] or "").strip()
+            if not ok_pb:
+                if lead_status == "INVITED":
+                    schedule_next_dm_retry_in_days(
+                        conn, lead_id, DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS
+                    )
+                    logger.info(
+                        "[Safety Cooldown] Lead %s (INVITED) failed optimistic DM. Applying strict %s-day backoff to save tokens.",
+                        lead_id,
+                        DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS,
+                    )
+                elif lead_status == "CONNECTED" and is_not_connected:
+                    schedule_next_dm_retry_in_days(conn, lead_id, DM_NOT_CONNECTED_COOLDOWN_DAYS)
             if (
                 not is_dedupe_skip
                 and not is_not_connected

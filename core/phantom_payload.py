@@ -604,6 +604,10 @@ def phantom_outcome_suggests_cannot_message_not_first_degree(
         "messaging is not available",
         "isn't in your network",
         "is not in your network",
+        "pending invitation",
+        "invite not accepted",
+        "must connect first",
+        "premium",
         "ne pouvez pas envoyer",  # FR
     )
     return any(n in blob for n in needles)
