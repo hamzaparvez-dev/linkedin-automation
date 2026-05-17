@@ -77,8 +77,12 @@ PHANTOMBUSTER_DWELL_TIME = os.getenv("PHANTOMBUSTER_DWELL_TIME", "true").strip()
 )
 # Phantombuster: poll /containers/fetch-result-object (engagement `run_agent` only)
 PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES = max(
-    1, int((os.getenv("PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES", "60") or "60").strip() or 60)
+    1, int((os.getenv("PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES", "20") or "20").strip() or 20)
 )
+# When false, launch + poll are not serialized per agent id (risk: overlapping runs, wasted credits).
+PHANTOMBUSTER_SERIALIZE_AGENT_LAUNCHES = os.getenv(
+    "PHANTOMBUSTER_SERIALIZE_AGENT_LAUNCHES", "true"
+).strip().lower() in ("1", "true", "yes", "on")
 PHANTOMBUSTER_LOG_POLLING_DEBUG = os.getenv("PHANTOMBUSTER_LOG_POLLING_DEBUG", "false").strip().lower() in (
     "1",
     "true",
@@ -122,12 +126,13 @@ BURST_MAX_ACTIONS = int(os.getenv("BURST_MAX_ACTIONS", "8"))
 DM_DELAY_MIN_HOURS = int(os.getenv("DM_DELAY_MIN_HOURS", "24"))
 DM_DELAY_MAX_HOURS = int(os.getenv("DM_DELAY_MAX_HOURS", "72"))
 
-# Day offsets from connection/accept: Msg1 +1, FU1 +3, FU2 +6, FU3 +10
+# Calendar-day offsets from connection: first DM at dm; followups at followup_1/2/3.
+# Gaps for eligibility: FU1 = followup_1 - dm, FU2 = followup_2 - followup_1, FU3 = followup_3 - followup_2.
 _DEFAULT_FOLLOW_UP_SCHEDULE: dict[str, int] = {
     "dm": 1,
-    "followup_1": 3,
-    "followup_2": 6,
-    "followup_3": 10,
+    "followup_1": 2,
+    "followup_2": 5,
+    "followup_3": 9,
 }
 
 

@@ -11,6 +11,7 @@ from core.ai_engine import OutreachResult
 from core.engagement_runner import (
     _engagement_bonus_argument,
     _process_connects,
+    _process_dms,
     _send_followup_dm,
 )
 
@@ -152,6 +153,215 @@ class TestEngagementRunnerSlot(unittest.TestCase):
         self.assertEqual(_args[0], "dm-agent-followup-test")
         self.assertIn("bonus_argument", kwargs)
         self.assertIsNone(kwargs["bonus_argument"])
+
+    def test_first_dm_ok_pb_persists_before_log_action(self) -> None:
+        """On Phantombuster success, SQLite/metrics writes run before action_log ok."""
+        account = _account(phantombuster_dm_agent_id="555")
+        rows = [
+            {
+                "lead_id": "lead-dm-ord",
+                "linkedin_url": "https://www.linkedin.com/in/person-one",
+                "score": 10,
+                "created_at": "2020-01-01",
+                "status": "CONNECTED",
+                "connected_at": "2000-01-01T00:00:00+00:00",
+                "invited_at": None,
+                "first_dm_sent_at": None,
+                "next_dm_attempt_at": None,
+            },
+        ]
+        cur = MagicMock()
+        cur.fetchall.return_value = rows
+        conn = MagicMock()
+        conn.execute.return_value = cur
+        pb = MagicMock()
+        pb.run_agent.return_value = ({"status": "finished"}, "cid-dm-1")
+        pb.fetch_output.return_value = []
+        ores = OutreachResult(text="Hi", source="test", raw_llm_snippet="")
+        order: list[str] = []
+
+        def mark_transition(*_a: object, **_k: object) -> None:
+            order.append("transition")
+
+        def mark_log(*_a: object, **_k: object) -> None:
+            order.append("log_action")
+
+        with (
+            patch("core.engagement_runner.approve_action") as m_appr,
+            patch("core.engagement_runner.pick_strategy", return_value="direct"),
+            patch("core.engagement_runner.compose_from_template", return_value=ores),
+            patch("core.engagement_runner.validate_outreach_plaintext", return_value=(True, "")),
+            patch("core.engagement_runner.recent_messages_for_repetition", return_value=[]),
+            patch("core.engagement_runner.log_action", side_effect=mark_log),
+            patch("core.engagement_runner.transition_lead_status", side_effect=mark_transition),
+            patch("core.engagement_runner.record_action_executed"),
+            patch("core.engagement_runner.record_sent_message"),
+            patch("core.engagement_runner.bump_metric"),
+            patch("core.engagement_runner.append_message_history"),
+            patch("core.engagement_runner._maybe_auto_pause_account_on_pb_auth", return_value=False),
+            patch("core.engagement_runner.time.sleep"),
+            patch("core.engagement_runner.get_account_linkedin_profile", return_value=_FAKE_SESSION),
+            patch("core.engagement_runner.get_account_user_agent", return_value=_UA),
+            patch("core.engagement_runner.validate_dm_message_sender_argument", return_value=(True, "")),
+        ):
+            m_appr.return_value = MagicMock(allowed=True, reason="")
+            _process_dms(conn, pb, account, dry_run=False, sql_limit=10)
+
+        self.assertEqual(order, ["transition", "log_action"])
+
+    def test_first_dm_state_persist_failed_logs_error(self) -> None:
+        account = _account(phantombuster_dm_agent_id="556")
+        rows = [
+            {
+                "lead_id": "lead-dm-fail",
+                "linkedin_url": "https://www.linkedin.com/in/person-two",
+                "score": 10,
+                "created_at": "2020-01-01",
+                "status": "CONNECTED",
+                "connected_at": "2000-01-01T00:00:00+00:00",
+                "invited_at": None,
+                "first_dm_sent_at": None,
+                "next_dm_attempt_at": None,
+            },
+        ]
+        cur = MagicMock()
+        cur.fetchall.return_value = rows
+        conn = MagicMock()
+        conn.execute.return_value = cur
+        pb = MagicMock()
+        pb.run_agent.return_value = ({"status": "finished"}, "cid-dm-2")
+        pb.fetch_output.return_value = []
+        ores = OutreachResult(text="Hi", source="test", raw_llm_snippet="")
+        m_log = MagicMock()
+        with (
+            patch("core.engagement_runner.approve_action") as m_appr,
+            patch("core.engagement_runner.pick_strategy", return_value="direct"),
+            patch("core.engagement_runner.compose_from_template", return_value=ores),
+            patch("core.engagement_runner.validate_outreach_plaintext", return_value=(True, "")),
+            patch("core.engagement_runner.recent_messages_for_repetition", return_value=[]),
+            patch("core.engagement_runner.log_action", m_log),
+            patch("core.engagement_runner.transition_lead_status", side_effect=RuntimeError("db down")),
+            patch("core.engagement_runner.record_action_executed"),
+            patch("core.engagement_runner.record_sent_message"),
+            patch("core.engagement_runner.bump_metric"),
+            patch("core.engagement_runner.append_message_history"),
+            patch("core.engagement_runner._maybe_auto_pause_account_on_pb_auth", return_value=False),
+            patch("core.engagement_runner.time.sleep"),
+            patch("core.engagement_runner.get_account_linkedin_profile", return_value=_FAKE_SESSION),
+            patch("core.engagement_runner.get_account_user_agent", return_value=_UA),
+            patch("core.engagement_runner.validate_dm_message_sender_argument", return_value=(True, "")),
+        ):
+            m_appr.return_value = MagicMock(allowed=True, reason="")
+            _process_dms(conn, pb, account, dry_run=False, sql_limit=10)
+
+        m_log.assert_called_once()
+        ca = m_log.call_args
+        self.assertEqual(ca.kwargs.get("status"), "error")
+        self.assertIn("state_persist_failed", ca.kwargs.get("detail", ""))
+
+    def test_followup_ok_pb_persists_before_log_action(self) -> None:
+        account = _account(phantombuster_dm_agent_id="557")
+        row = {
+            "lead_id": "lead-fu-ord",
+            "linkedin_url": "https://www.linkedin.com/in/testperson",
+            "status": "MESSAGED",
+            "first_dm_sent_at": "2020-01-01T00:00:00+00:00",
+            "next_dm_attempt_at": None,
+            "score": 1,
+            "created_at": "2020-01-01",
+        }
+        conn = MagicMock()
+        pb = MagicMock()
+        pb.run_agent.return_value = ({"status": "finished"}, "cid-fu-ord")
+        pb.fetch_output.return_value = []
+        ores = OutreachResult(text="Short follow-up body for test.", source="test", raw_llm_snippet="")
+        order: list[str] = []
+
+        def mark_transition(*_a: object, **_k: object) -> None:
+            order.append("transition")
+
+        def mark_log(*_a: object, **_k: object) -> None:
+            order.append("log_action")
+
+        with (
+            patch("core.engagement_runner.approve_action") as m_appr,
+            patch("core.engagement_runner.pick_strategy", return_value="direct"),
+            patch("core.engagement_runner.compose_followup_message", return_value=ores),
+            patch("core.engagement_runner.validate_outreach_plaintext", return_value=(True, "")),
+            patch("core.engagement_runner.recent_messages_for_repetition", return_value=[]),
+            patch("core.engagement_runner.log_action", side_effect=mark_log),
+            patch("core.engagement_runner.transition_lead_status", side_effect=mark_transition),
+            patch("core.engagement_runner.record_action_executed"),
+            patch("core.engagement_runner.record_sent_message"),
+            patch("core.engagement_runner.bump_metric"),
+            patch("core.engagement_runner.append_message_history"),
+            patch("core.engagement_runner._maybe_auto_pause_account_on_pb_auth", return_value=False),
+            patch("core.engagement_runner.time.sleep"),
+            patch("core.engagement_runner.get_account_user_agent", return_value=_UA),
+        ):
+            m_appr.return_value = MagicMock(allowed=True, reason="")
+            _send_followup_dm(
+                conn,
+                pb,
+                account,
+                row,
+                stage_num=1,
+                dry_run=False,
+                linkedin_session=_FAKE_SESSION,
+                agent_id=account.phantombuster_dm_agent_id or "",
+            )
+
+        self.assertEqual(order, ["transition", "log_action"])
+
+    def test_followup_state_persist_failed_logs_error(self) -> None:
+        account = _account(phantombuster_dm_agent_id="558")
+        row = {
+            "lead_id": "lead-fu-fail",
+            "linkedin_url": "https://www.linkedin.com/in/testperson",
+            "status": "MESSAGED",
+            "first_dm_sent_at": "2020-01-01T00:00:00+00:00",
+            "next_dm_attempt_at": None,
+            "score": 1,
+            "created_at": "2020-01-01",
+        }
+        conn = MagicMock()
+        pb = MagicMock()
+        pb.run_agent.return_value = ({"status": "finished"}, "cid-fu-fail")
+        pb.fetch_output.return_value = []
+        ores = OutreachResult(text="Short follow-up body for test.", source="test", raw_llm_snippet="")
+        m_log = MagicMock()
+        with (
+            patch("core.engagement_runner.approve_action") as m_appr,
+            patch("core.engagement_runner.pick_strategy", return_value="direct"),
+            patch("core.engagement_runner.compose_followup_message", return_value=ores),
+            patch("core.engagement_runner.validate_outreach_plaintext", return_value=(True, "")),
+            patch("core.engagement_runner.recent_messages_for_repetition", return_value=[]),
+            patch("core.engagement_runner.log_action", m_log),
+            patch("core.engagement_runner.transition_lead_status", side_effect=RuntimeError("db down")),
+            patch("core.engagement_runner.record_action_executed"),
+            patch("core.engagement_runner.record_sent_message"),
+            patch("core.engagement_runner.bump_metric"),
+            patch("core.engagement_runner.append_message_history"),
+            patch("core.engagement_runner._maybe_auto_pause_account_on_pb_auth", return_value=False),
+            patch("core.engagement_runner.time.sleep"),
+            patch("core.engagement_runner.get_account_user_agent", return_value=_UA),
+        ):
+            m_appr.return_value = MagicMock(allowed=True, reason="")
+            _send_followup_dm(
+                conn,
+                pb,
+                account,
+                row,
+                stage_num=1,
+                dry_run=False,
+                linkedin_session=_FAKE_SESSION,
+                agent_id=account.phantombuster_dm_agent_id or "",
+            )
+
+        m_log.assert_called_once()
+        ca = m_log.call_args
+        self.assertEqual(ca.kwargs.get("status"), "error")
+        self.assertIn("state_persist_failed", ca.kwargs.get("detail", ""))
 
 
 if __name__ == "__main__":
