@@ -861,6 +861,7 @@ def _process_dms(
             is_dedupe_skip = False
             is_not_connected = False
             is_poll_timeout = False
+            raw_done = False
             try:
                 result, cid = pb.run_agent(
                     agent_id, arg, timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES, bonus_argument=None
@@ -943,6 +944,43 @@ def _process_dms(
                     linkedin_session,
                 )
             if is_poll_timeout:
+                logger.warning(
+                    "Phantombuster DM poll timeout; continuing to next lead. account=%s lead=%s",
+                    account.account_id,
+                    lead_id,
+                )
+            persisted_ok = False
+            if ok_pb:
+                try:
+                    now = utc_now_iso()
+                    transition_lead_status(
+                        conn,
+                        lead_id,
+                        "MESSAGED",
+                        first_dm_sent_at=now,
+                        last_action_at=now,
+                        next_dm_attempt_at=None,
+                    )
+                    record_action_executed(conn, account.account_id, "dm")
+                    record_sent_message(conn, account.account_id, body, strategy)
+                    bump_metric(
+                        conn,
+                        date.today().isoformat(),
+                        account.account_id,
+                        "messages_sent",
+                        1,
+                    )
+                    append_message_history(conn, lead_id, "outbound_dm", body)
+                    persisted_ok = True
+                except Exception:
+                    logger.exception(
+                        "First DM state persist failed account=%s lead=%s",
+                        account.account_id,
+                        lead_id,
+                    )
+                    persisted_ok = False
+
+            if is_poll_timeout:
                 _dm_d = "first_dm:pb_polling_timeout|" + detail
                 _dm_st = "error"
             elif is_not_connected:
@@ -951,9 +989,12 @@ def _process_dms(
             elif is_dedupe_skip:
                 _dm_d = "first_dm:pb_dedupe_already_processed|" + detail
                 _dm_st = "skipped"
-            elif ok_pb:
+            elif ok_pb and persisted_ok:
                 _dm_d = "first_dm:pb_finished|" + detail
                 _dm_st = "ok"
+            elif ok_pb and not persisted_ok:
+                _dm_d = "first_dm:state_persist_failed|" + detail
+                _dm_st = "error"
             else:
                 _dm_d = "first_dm:pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
                 _dm_st = "error"
@@ -971,7 +1012,7 @@ def _process_dms(
                 phantom_response=_phantom_log(phantom_summary, ores),
             )
             lead_status = str(row["status"] or "").strip()
-            if not ok_pb:
+            if not ok_pb or (ok_pb and not persisted_ok):
                 if lead_status == "INVITED":
                     schedule_next_dm_retry_in_days(
                         conn, lead_id, DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS
@@ -992,26 +1033,6 @@ def _process_dms(
                 )
             ):
                 break
-            if ok_pb:
-                now = utc_now_iso()
-                transition_lead_status(
-                    conn,
-                    lead_id,
-                    "MESSAGED",
-                    first_dm_sent_at=now,
-                    last_action_at=now,
-                    next_dm_attempt_at=None,
-                )
-                record_action_executed(conn, account.account_id, "dm")
-                record_sent_message(conn, account.account_id, body, strategy)
-                bump_metric(
-                    conn,
-                    date.today().isoformat(),
-                    account.account_id,
-                    "messages_sent",
-                    1,
-                )
-                append_message_history(conn, lead_id, "outbound_dm", body)
 
         delay = random.randint(account.delay_min_sec, account.delay_max_sec)
         logger.debug("Post-DM delay %ss (account=%s)", delay, account.account_id)
@@ -1339,6 +1360,64 @@ def _send_followup_dm(
             )
             logger.exception("Follow-up DM (Message Sender) phantom failed lead=%s", lead_id)
         if is_poll_timeout:
+            logger.warning(
+                "Phantombuster %s poll timeout; continuing to next lead. account=%s lead=%s",
+                phantom_log_action,
+                account.account_id,
+                lead_id,
+            )
+        persisted_ok = False
+        if ok_pb:
+            try:
+                now = utc_now_iso()
+                if stage_num == 1:
+                    transition_lead_status(
+                        conn,
+                        lead_id,
+                        "FOLLOW_UP_1",
+                        followup_1_sent_at=now,
+                        last_action_at=now,
+                        next_dm_attempt_at=None,
+                    )
+                elif stage_num == 2:
+                    transition_lead_status(
+                        conn,
+                        lead_id,
+                        "FOLLOW_UP_2",
+                        followup_2_sent_at=now,
+                        last_action_at=now,
+                        next_dm_attempt_at=None,
+                    )
+                else:
+                    transition_lead_status(
+                        conn,
+                        lead_id,
+                        "FOLLOW_UP_3",
+                        followup_3_sent_at=now,
+                        last_action_at=now,
+                        next_dm_attempt_at=None,
+                    )
+                record_action_executed(conn, account.account_id, "dm")
+                record_sent_message(conn, account.account_id, body, strategy)
+                bump_metric(
+                    conn,
+                    date.today().isoformat(),
+                    account.account_id,
+                    "messages_sent",
+                    1,
+                )
+                append_message_history(conn, lead_id, f"outbound_followup_{stage_num}", body)
+                persisted_ok = True
+            except Exception:
+                logger.exception(
+                    "Follow-up state persist failed account=%s lead=%s stage=%s",
+                    account.account_id,
+                    lead_id,
+                    stage_num,
+                )
+                persisted_ok = False
+
+        if is_poll_timeout:
             _fu_d = f"{_fu_prefix}{stage_key}:pb_polling_timeout|" + detail
             _fu_st = "error"
         elif is_not_connected:
@@ -1347,9 +1426,12 @@ def _send_followup_dm(
         elif is_dedupe_skip:
             _fu_d = f"{_fu_prefix}{stage_key}:pb_dedupe_already_processed|" + detail
             _fu_st = "skipped"
-        elif ok_pb:
+        elif ok_pb and persisted_ok:
             _fu_d = f"{_fu_prefix}{stage_key}:pb_finished|" + detail
             _fu_st = "ok"
+        elif ok_pb and not persisted_ok:
+            _fu_d = f"{_fu_prefix}{stage_key}:state_persist_failed|" + detail
+            _fu_st = "error"
         else:
             _fu_d = f"{_fu_prefix}{stage_key}:pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
             _fu_st = "error"
@@ -1377,45 +1459,6 @@ def _send_followup_dm(
             )
         ):
             return True
-        if ok_pb:
-            now = utc_now_iso()
-            if stage_num == 1:
-                transition_lead_status(
-                    conn,
-                    lead_id,
-                    "FOLLOW_UP_1",
-                    followup_1_sent_at=now,
-                    last_action_at=now,
-                    next_dm_attempt_at=None,
-                )
-            elif stage_num == 2:
-                transition_lead_status(
-                    conn,
-                    lead_id,
-                    "FOLLOW_UP_2",
-                    followup_2_sent_at=now,
-                    last_action_at=now,
-                    next_dm_attempt_at=None,
-                )
-            else:
-                transition_lead_status(
-                    conn,
-                    lead_id,
-                    "FOLLOW_UP_3",
-                    followup_3_sent_at=now,
-                    last_action_at=now,
-                    next_dm_attempt_at=None,
-                )
-            record_action_executed(conn, account.account_id, "dm")
-            record_sent_message(conn, account.account_id, body, strategy)
-            bump_metric(
-                conn,
-                date.today().isoformat(),
-                account.account_id,
-                "messages_sent",
-                1,
-            )
-            append_message_history(conn, lead_id, f"outbound_followup_{stage_num}", body)
 
     delay = random.randint(account.delay_min_sec, account.delay_max_sec)
     time.sleep(delay)

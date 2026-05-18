@@ -19,6 +19,7 @@ from config import (
     PHANTOMBUSTER_API_KEY,
     PHANTOMBUSTER_BASE_URL,
     PHANTOMBUSTER_LOG_POLLING_DEBUG,
+    PHANTOMBUSTER_SERIALIZE_AGENT_LAUNCHES,
 )
 
 logger = logging.getLogger(__name__)
@@ -321,9 +322,11 @@ class PhantombusterClient:
         bonus_argument: Optional[dict[str, Any]] = None,
     ) -> str:
         """Launch any phantom by id; argument must match the phantom's expected schema."""
-        lock = _shared_lock_for_agent(agent_id)
-        with lock:
-            return self._launch_agent_unlocked(agent_id, argument, bonus_argument)
+        if PHANTOMBUSTER_SERIALIZE_AGENT_LAUNCHES:
+            lock = _shared_lock_for_agent(agent_id)
+            with lock:
+                return self._launch_agent_unlocked(agent_id, argument, bonus_argument)
+        return self._launch_agent_unlocked(agent_id, argument, bonus_argument)
 
     # ── Poll until agent finishes ──────────────────────────────────────────────
     def _log_polling_result(self, container_id: str, result: Any) -> None:
@@ -540,8 +543,12 @@ class PhantombusterClient:
         bonus_argument: Optional[dict[str, Any]] = None,
     ) -> tuple[dict, str]:
         """Launch, wait, return (result_object, container_id). Serialized per agent_id."""
-        lock = _shared_lock_for_agent(agent_id)
-        with lock:
-            cid = self._launch_agent_unlocked(agent_id, argument, bonus_argument)
-            result = self.wait_for_completion(cid, timeout_minutes=timeout_minutes)
+        if PHANTOMBUSTER_SERIALIZE_AGENT_LAUNCHES:
+            lock = _shared_lock_for_agent(agent_id)
+            with lock:
+                cid = self._launch_agent_unlocked(agent_id, argument, bonus_argument)
+                result = self.wait_for_completion(cid, timeout_minutes=timeout_minutes)
+            return result, cid
+        cid = self._launch_agent_unlocked(agent_id, argument, bonus_argument)
+        result = self.wait_for_completion(cid, timeout_minutes=timeout_minutes)
         return result, cid
