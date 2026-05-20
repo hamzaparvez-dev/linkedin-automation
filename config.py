@@ -96,6 +96,17 @@ DEDUPE_CONNECT_ASSUME_INVITED = os.getenv("DEDUPE_CONNECT_ASSUME_INVITED", "fals
     "yes",
     "on",
 )
+# After connect_dedupe_skipped: defer re-attempt via leads.next_dm_attempt_at (ASSIGNED_TO_ACCOUNT only).
+CONNECT_DEDUPE_COOLDOWN_DAYS = int(
+    (os.getenv("CONNECT_DEDUPE_COOLDOWN_DAYS", "7") or "7").strip() or 7
+)
+# When true, dedupe-skipped connects transition lead to FAILED for manual triage (default: cooldown only).
+CONNECT_DEDUPE_FLAG_FAILED = os.getenv("CONNECT_DEDUPE_FLAG_FAILED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # First DM after invite (Connect + DM phantoms only; no list-export sync slot)
 OPTIMISTIC_FIRST_DM_DAYS = int((os.getenv("OPTIMISTIC_FIRST_DM_DAYS", "1") or "1").strip() or 1)

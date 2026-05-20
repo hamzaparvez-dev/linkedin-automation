@@ -103,6 +103,65 @@ class TestEngagementRunnerSlot(unittest.TestCase):
             config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = prev_mode
             config_module.PHANTOMBUSTER_USER_AGENT = prev_ua
 
+    def test_connect_dedupe_skipped_logs_error_no_invited(self) -> None:
+        account = _account(phantombuster_connect_agent_id="999")
+        rows = [
+            {
+                "lead_id": "lead-dedupe",
+                "linkedin_url": "https://www.linkedin.com/in/person-dedupe",
+                "score": 10,
+                "created_at": "2020-01-01",
+                "status": "ASSIGNED_TO_ACCOUNT",
+            },
+        ]
+        cur = MagicMock()
+        cur.fetchall.return_value = rows
+        conn = MagicMock()
+        conn.execute.return_value = cur
+        pb = MagicMock()
+        pb.run_agent.return_value = (
+            {
+                "status": "finished",
+                "resultObject": {
+                    "runtimeEvents": [
+                        {"slug": "input-already-processed", "text": "Input is already processed."}
+                    ]
+                },
+            },
+            "cid-dedupe",
+        )
+        pb.fetch_output.return_value = []
+        ores = OutreachResult(text="Hi", source="test", raw_llm_snippet="")
+        m_log = MagicMock()
+        m_transition = MagicMock()
+        m_schedule = MagicMock()
+        with (
+            patch("core.engagement_runner.approve_action") as m_appr,
+            patch("core.engagement_runner.pick_strategy", return_value="direct"),
+            patch("core.engagement_runner.compose_connect_note", return_value=ores),
+            patch("core.engagement_runner.validate_outreach_plaintext", return_value=(True, "")),
+            patch("core.engagement_runner.recent_messages_for_repetition", return_value=[]),
+            patch("core.engagement_runner.log_action", m_log),
+            patch("core.engagement_runner.transition_lead_status", m_transition),
+            patch("core.engagement_runner.record_action_executed"),
+            patch("core.engagement_runner.record_sent_message"),
+            patch("core.engagement_runner.bump_metric"),
+            patch("core.engagement_runner.append_message_history"),
+            patch("core.engagement_runner.schedule_next_dm_retry_in_days", m_schedule),
+            patch("core.engagement_runner._maybe_auto_pause_account_on_pb_auth", return_value=False),
+            patch("core.engagement_runner.time.sleep"),
+            patch("core.engagement_runner.get_account_linkedin_profile", return_value=_FAKE_SESSION),
+            patch("core.engagement_runner.get_account_user_agent", return_value=_UA),
+        ):
+            m_appr.return_value = MagicMock(allowed=True, reason="")
+            _process_connects(conn, pb, account, dry_run=False, sql_limit=10)
+
+        m_log.assert_called_once()
+        self.assertEqual(m_log.call_args.kwargs.get("status"), "error")
+        self.assertIn("connect_dedupe_skipped", m_log.call_args.kwargs.get("detail", ""))
+        m_transition.assert_not_called()
+        m_schedule.assert_called_once()
+
     def test_followup_dm_run_agent_passes_bonus_argument_none(self) -> None:
         """Message Sender follow-ups must not use connect-style bonusArgument (refactor hardening)."""
         account = _account(phantombuster_dm_agent_id="dm-agent-followup-test")
