@@ -10,6 +10,8 @@ from typing import Any, Optional
 
 from config import (
     ACCOUNT_CONFIG_PATH,
+    CONNECT_DEDUPE_COOLDOWN_DAYS,
+    CONNECT_DEDUPE_FLAG_FAILED,
     DEDUPE_CONNECT_ASSUME_INVITED,
     DM_INVITED_OPTIMISTIC_FAILURE_COOLDOWN_DAYS,
     DM_NOT_CONNECTED_COOLDOWN_DAYS,
@@ -20,6 +22,7 @@ from config import (
     PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES,
     PHANTOMBUSTER_CONNECT_AGENT_ID,
     PHANTOMBUSTER_DM_AGENT_ID,
+    REQUIRE_POST_TEXT_FOR_LLM,
     STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS,
     follow_up_eligibility_gaps,
 )
@@ -36,6 +39,7 @@ from core.phantom_payload import (
     merge_phantom_launch_defaults,
     normalize_session_cookie_for_bonus,
     phantom_failure_suggests_linkedin_session_issue,
+    phantom_connect_deduplication_skipped,
     phantom_outcome_suggests_cannot_message_not_first_degree,
     phantom_outcome_suggests_input_already_processed,
     summarize_phantom_result,
@@ -70,6 +74,15 @@ from integrations.phantombuster_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _missing_post_text_blocks_outbound(account: AccountConfig, lead: dict[str, Any]) -> bool:
+    """When REQUIRE_POST_TEXT_FOR_LLM and account uses llm mode, skip outbound without post_text."""
+    if not REQUIRE_POST_TEXT_FOR_LLM:
+        return False
+    if (account.outreach_copy_mode or "").strip().lower() != "llm":
+        return False
+    return not (lead.get("post_text") or "").strip()
 
 
 def _parse_ts(s: Optional[str]) -> Optional[datetime]:
@@ -247,6 +260,22 @@ def _phantom_effective_outcome(
         and phantom_outcome_suggests_input_already_processed(result, fetch_output_rows=out)
     )
     return raw, raw and not is_dedupe, out
+
+
+def _connect_phantom_outcome(
+    pb: PhantombusterClient,
+    result: dict[str, Any],
+    cid: str,
+) -> tuple[bool, bool, list[dict[str, Any]]]:
+    """
+    Connect-only outcome: finished containers that PB skipped (memory / empty sheet) are not effective_ok.
+    """
+    raw, _, out = _phantom_effective_outcome(pb, result, cid)
+    if not raw:
+        return raw, False, out
+    if phantom_connect_deduplication_skipped(result, fetch_output_rows=out):
+        return raw, False, out
+    return raw, True, out
 
 
 def _pb_error_detail_suffix(phantom_summary: str, *, max_len: int = 1500) -> str:
@@ -470,11 +499,17 @@ def _process_connects(
     agent_id = _connect_agent_id(account)
     linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
     user_agent = _resolve_engagement_user_agent(conn, account)
+    now_iso = utc_now_iso()
     rows = conn.execute(
         f"""
         SELECT leads.* FROM leads
         WHERE leads.account_id=? AND leads.status='ASSIGNED_TO_ACCOUNT' AND TRIM(leads.linkedin_url) != ''
           {_STOP_OUTBOUND_STATUSES_SQL}
+          AND (
+            leads.next_dm_attempt_at IS NULL
+            OR TRIM(COALESCE(leads.next_dm_attempt_at, '')) = ''
+            OR leads.next_dm_attempt_at <= ?
+          )
           AND NOT EXISTS (
             SELECT 1 FROM action_log al
             WHERE al.lead_id = leads.lead_id
@@ -485,7 +520,7 @@ def _process_connects(
         ORDER BY leads.score DESC, leads.created_at
         LIMIT ?
         """,
-        (account.account_id, sql_limit),
+        (account.account_id, now_iso, sql_limit),
     ).fetchall()
 
     for row in rows:
@@ -496,6 +531,19 @@ def _process_connects(
 
         lead = row_to_lead_dict(row)
         lead_id = lead["lead_id"]
+        if _missing_post_text_blocks_outbound(account, lead):
+            log_action(
+                conn,
+                lead_id=lead_id,
+                account_id=account.account_id,
+                action_type="connect",
+                status="skipped",
+                detail="missing_post_text",
+                strategy_used="",
+                dry_run=dry_run,
+                linkedin_session=linkedin_session,
+            )
+            continue
         strategy = pick_strategy(conn, account)
         ores: OutreachResult = compose_connect_note(lead, strategy, account=account)
         note = ores.text
@@ -613,7 +661,7 @@ def _process_connects(
                     base_sum = summarize_phantom_result(result)
                     phantom_summary = base_sum
                 else:
-                    raw_done, effective_ok, out_rows = _phantom_effective_outcome(pb, result, cid)
+                    raw_done, effective_ok, out_rows = _connect_phantom_outcome(pb, result, cid)
                     is_dedupe_skip = bool(raw_done and not effective_ok)
                     ok_pb = bool(effective_ok)
                     base_sum = summarize_phantom_result(result)
@@ -623,7 +671,7 @@ def _process_connects(
                     account_id=account.account_id,
                     agent_id=agent_id,
                     lead_id=lead_id,
-                    ok=ok_pb,
+                    ok=ok_pb and not is_dedupe_skip,
                     container_id=cid,
                     summary=phantom_summary,
                 )
@@ -666,59 +714,132 @@ def _process_connects(
                 _conn_detail = "pb_polling_timeout|" + detail
                 _conn_status = "error"
             elif is_dedupe_skip:
-                _conn_detail = "pb_dedupe_already_processed|" + detail
-                _conn_status = "skipped"
+                _conn_detail = "connect_dedupe_skipped|pb_dedupe_already_processed|" + detail
+                _conn_status = "error"
             elif ok_pb:
                 _conn_detail = "pb_finished|" + detail
                 _conn_status = "ok"
             else:
                 _conn_detail = "pb_error|" + _pb_error_detail_suffix(phantom_summary) + detail
                 _conn_status = "error"
-            log_action(
-                conn,
-                lead_id=lead_id,
-                account_id=account.account_id,
-                action_type="connect",
-                status=_conn_status,
-                detail=_conn_detail,
-                strategy_used=strategy,
-                message_variant=msg_var,
-                dry_run=False,
-                linkedin_session=linkedin_session,
-                phantom_response=_phantom_log(phantom_summary, ores),
-            )
+
+            persisted_ok = False
+            if ok_pb:
+                try:
+                    now = utc_now_iso()
+                    transition_lead_status(
+                        conn,
+                        lead_id,
+                        "INVITED",
+                        invited_at=now,
+                        last_action_at=now,
+                    )
+                    record_action_executed(conn, account.account_id, "connect")
+                    record_sent_message(conn, account.account_id, note, strategy)
+                    bump_metric(
+                        conn,
+                        date.today().isoformat(),
+                        account.account_id,
+                        "connections_sent",
+                        1,
+                    )
+                    append_message_history(conn, lead_id, "outbound_connect", note)
+                    persisted_ok = True
+                except Exception:
+                    logger.exception(
+                        "Connect state persist failed account=%s lead=%s",
+                        account.account_id,
+                        lead_id,
+                    )
+                    persisted_ok = False
+
+            if ok_pb and persisted_ok:
+                log_action(
+                    conn,
+                    lead_id=lead_id,
+                    account_id=account.account_id,
+                    action_type="connect",
+                    status="ok",
+                    detail=_conn_detail,
+                    strategy_used=strategy,
+                    message_variant=msg_var,
+                    dry_run=False,
+                    linkedin_session=linkedin_session,
+                    phantom_response=_phantom_log(phantom_summary, ores),
+                )
+            elif ok_pb and not persisted_ok:
+                log_action(
+                    conn,
+                    lead_id=lead_id,
+                    account_id=account.account_id,
+                    action_type="connect",
+                    status="error",
+                    detail="connect_state_persist_failed|" + _conn_detail,
+                    strategy_used=strategy,
+                    message_variant=msg_var,
+                    dry_run=False,
+                    linkedin_session=linkedin_session,
+                    phantom_response=_phantom_log(phantom_summary, ores),
+                )
+            else:
+                log_action(
+                    conn,
+                    lead_id=lead_id,
+                    account_id=account.account_id,
+                    action_type="connect",
+                    status=_conn_status,
+                    detail=_conn_detail,
+                    strategy_used=strategy,
+                    message_variant=msg_var,
+                    dry_run=False,
+                    linkedin_session=linkedin_session,
+                    phantom_response=_phantom_log(phantom_summary, ores),
+                )
+
             if not is_dedupe_skip and not is_poll_timeout and _maybe_auto_pause_account_on_pb_auth(
                 conn, account, ok_pb=ok_pb, phantom_summary=phantom_summary, result=result
             ):
                 break
-            if ok_pb:
-                now = utc_now_iso()
-                transition_lead_status(
-                    conn,
-                    lead_id,
-                    "INVITED",
-                    invited_at=now,
-                    last_action_at=now,
-                )
-                record_action_executed(conn, account.account_id, "connect")
-                record_sent_message(conn, account.account_id, note, strategy)
-                bump_metric(
-                    conn,
-                    date.today().isoformat(),
-                    account.account_id,
-                    "connections_sent",
-                    1,
-                )
-                append_message_history(conn, lead_id, "outbound_connect", note)
-            elif is_dedupe_skip and DEDUPE_CONNECT_ASSUME_INVITED:
-                now = utc_now_iso()
-                transition_lead_status(
-                    conn,
-                    lead_id,
-                    "INVITED",
-                    invited_at=now,
-                    last_action_at=now,
-                )
+
+            if is_dedupe_skip:
+                if DEDUPE_CONNECT_ASSUME_INVITED:
+                    try:
+                        now = utc_now_iso()
+                        transition_lead_status(
+                            conn,
+                            lead_id,
+                            "INVITED",
+                            invited_at=now,
+                            last_action_at=now,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Connect assume-invited persist failed account=%s lead=%s",
+                            account.account_id,
+                            lead_id,
+                        )
+                else:
+                    schedule_next_dm_retry_in_days(
+                        conn, lead_id, CONNECT_DEDUPE_COOLDOWN_DAYS
+                    )
+                    logger.info(
+                        "Connect dedupe skip: lead=%s backoff %s days (next_dm_attempt_at)",
+                        lead_id,
+                        CONNECT_DEDUPE_COOLDOWN_DAYS,
+                    )
+                    if CONNECT_DEDUPE_FLAG_FAILED:
+                        try:
+                            transition_lead_status(
+                                conn,
+                                lead_id,
+                                "FAILED",
+                                last_action_at=utc_now_iso(),
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Connect dedupe FAILED transition failed lead=%s",
+                                lead_id,
+                            )
 
         delay = random.randint(account.delay_min_sec, account.delay_max_sec)
         logger.debug("Post-connect delay %ss (account=%s)", delay, account.account_id)
@@ -771,6 +892,19 @@ def _process_dms(
 
         lead = row_to_lead_dict(row)
         lead_id = lead["lead_id"]
+        if _missing_post_text_blocks_outbound(account, lead):
+            log_action(
+                conn,
+                lead_id=lead_id,
+                account_id=account.account_id,
+                action_type="dm",
+                status="skipped",
+                detail="missing_post_text",
+                strategy_used="",
+                dry_run=dry_run,
+                linkedin_session=linkedin_session,
+            )
+            continue
         strategy = pick_strategy(conn, account)
         recent = recent_messages_for_repetition(conn, account.account_id, 50)
         ores: OutreachResult = compose_from_template(
@@ -1191,6 +1325,19 @@ def _send_followup_dm(
     user_agent = _resolve_engagement_user_agent(conn, account)
     lead = row_to_lead_dict(row)
     lead_id = lead["lead_id"]
+    if _missing_post_text_blocks_outbound(account, lead):
+        log_action(
+            conn,
+            lead_id=lead_id,
+            account_id=account.account_id,
+            action_type=_followup_phantom_log_action(stage_num),
+            status="skipped",
+            detail="missing_post_text",
+            strategy_used="",
+            dry_run=dry_run,
+            linkedin_session=linkedin_session,
+        )
+        return True
     strategy = pick_strategy(conn, account)
     recent = recent_messages_for_repetition(conn, account.account_id, 50)
     stage_key = ("followup_1", "followup_2", "followup_3")[stage_num - 1]

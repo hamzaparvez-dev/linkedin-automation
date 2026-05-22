@@ -236,6 +236,36 @@ export function Leads() {
               Close
             </button>
           </div>
+          {(detail.linkedin_headline || detail.title || detail.post_url || detail.post_text) && (
+            <div className="post-lead-fields">
+              {detail.linkedin_headline ? (
+                <p>
+                  <strong>Headline:</strong> {String(detail.linkedin_headline)}
+                </p>
+              ) : null}
+              {detail.title ? (
+                <p>
+                  <strong>Role:</strong> {String(detail.title)}
+                </p>
+              ) : null}
+              {detail.post_url ? (
+                <p>
+                  <strong>Post:</strong>{' '}
+                  <a href={String(detail.post_url)} target="_blank" rel="noreferrer">
+                    Open
+                  </a>
+                </p>
+              ) : null}
+              {detail.post_text ? (
+                <p className="post-text-snippet">
+                  <strong>Post text:</strong>{' '}
+                  {String(detail.post_text).length > 400
+                    ? `${String(detail.post_text).slice(0, 400)}…`
+                    : String(detail.post_text)}
+                </p>
+              ) : null}
+            </div>
+          )}
           <pre className="json-block">{JSON.stringify(detail, null, 2)}</pre>
         </div>
       )}

@@ -156,6 +156,12 @@ def _migrate_leads_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE leads ADD COLUMN next_dm_attempt_at TEXT")
     if cols and "recent_activity" not in cols:
         conn.execute("ALTER TABLE leads ADD COLUMN recent_activity TEXT")
+    if cols and "linkedin_headline" not in cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN linkedin_headline TEXT")
+    if cols and "post_url" not in cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN post_url TEXT")
+    if cols and "post_text" not in cols:
+        conn.execute("ALTER TABLE leads ADD COLUMN post_text TEXT")
 
 
 def _migrate_action_log_columns(conn: sqlite3.Connection) -> None:

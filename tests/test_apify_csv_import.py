@@ -37,6 +37,25 @@ class TestApifyCsvImport(unittest.TestCase):
         assert m is not None
         self.assertEqual(m["lead_id"], lid)
 
+    def test_google_sheet_post_text_headers(self) -> None:
+        row = {
+            "Name": "Jane Doe",
+            "Headline": "Building in Web3",
+            "occupation": "Founder",
+            "Profile Url": "https://www.linkedin.com/in/jane-doe/",
+            "Post url": "https://www.linkedin.com/feed/update/urn:li:activity:123",
+            "Post text": "Excited to share our new protocol launch.",
+        }
+        m = map_apify_csv_row(row)
+        self.assertIsNotNone(m)
+        assert m is not None
+        self.assertEqual(m["full_name"], "Jane Doe")
+        self.assertEqual(m["linkedin_headline"], "Building in Web3")
+        self.assertEqual(m["title"], "Founder")
+        self.assertEqual(m["post_url"], "https://www.linkedin.com/feed/update/urn:li:activity:123")
+        self.assertEqual(m["post_text"], "Excited to share our new protocol launch.")
+        self.assertNotEqual(m["title"], m["linkedin_headline"])
+
 
 if __name__ == "__main__":
     unittest.main()

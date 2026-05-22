@@ -541,21 +541,72 @@ def summarize_phantom_result(result: dict[str, Any], *, max_len: int = 900) -> s
     return s[:max_len]
 
 
+    return s[:max_len]
+
+
+_FLATTEN_MAX_DEPTH = 8
+_FLATTEN_MAX_CHARS = 50_000
+
+
+def _collect_strings_for_search(
+    obj: Any,
+    *,
+    depth: int = 0,
+    parts: Optional[list[str]] = None,
+    total: int = 0,
+) -> tuple[list[str], int]:
+    """Recursively collect searchable text (runtimeEvents, slug, nested resultObject JSON strings)."""
+    if parts is None:
+        parts = []
+    if depth > _FLATTEN_MAX_DEPTH or total >= _FLATTEN_MAX_CHARS:
+        return parts, total
+    if obj is None:
+        return parts, total
+    if isinstance(obj, str):
+        s = obj.strip()
+        if not s:
+            return parts, total
+        if depth < _FLATTEN_MAX_DEPTH and s[0] in ("{", "["):
+            try:
+                parsed = json.loads(s)
+                return _collect_strings_for_search(parsed, depth=depth + 1, parts=parts, total=total)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                pass
+        parts.append(s)
+        total += len(s)
+        return parts, total
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(k, str) and k.strip():
+                parts.append(k)
+                total += len(k)
+            parts, total = _collect_strings_for_search(v, depth=depth + 1, parts=parts, total=total)
+        return parts, total
+    if isinstance(obj, (list, tuple)):
+        for item in obj:
+            parts, total = _collect_strings_for_search(item, depth=depth + 1, parts=parts, total=total)
+        return parts, total
+    s = str(obj).strip()
+    if s:
+        parts.append(s)
+        total += len(s)
+    return parts, total
+
+
 def _flatten_outcome_to_search_text(
     result: Optional[dict[str, Any]],
     fetch_output_rows: Optional[list[dict[str, Any]]] = None,
 ) -> str:
     """Lowercase text blob for dedupe heuristics (result object + tabular output rows)."""
     parts: list[str] = []
+    total = 0
     if isinstance(result, dict):
         for key in ("message", "error", "output", "returnMessage", "returnCode", "returnValue"):
             v = result.get(key)
             if v is not None and str(v).strip():
                 parts.append(str(v))
-        try:
-            parts.append(json.dumps(result, default=str))
-        except (TypeError, ValueError):
-            parts.append(str(result))
+                total += len(str(v))
+        parts, total = _collect_strings_for_search(result, parts=parts, total=total)
     for row in fetch_output_rows or ():
         if isinstance(row, dict):
             for v in row.values():
@@ -570,17 +621,40 @@ def _flatten_outcome_to_search_text(
 # (phantom "memory" or spreadsheet dedupe). These substrings are logged in that case.
 _INPUT_ALREADY_PROCESSED_PHRASES: tuple[str, ...] = (
     "input already processed",
+    "input-already-processed",
+    "input is already processed",
     "this input was already processed",
     "this line was already processed",
     "row already processed",
     "line already processed",
     "profile already processed",
+    "spreadsheet is empty",
+    "everyone is already added",
+    "already added from this sheet",
     "was already in the",
     "duplicate line",
     "duplicated input",
     "éjà traité",  # FR locale logs
     "déjà traité",
 )
+
+_SYNTHETIC_DEDUPE_60S_EMPTY = "nostatus_dedupe_60s_empty"
+
+
+def phantom_connect_deduplication_skipped(
+    result: Optional[dict[str, Any]],
+    *,
+    fetch_output_rows: Optional[list[dict[str, Any]]] = None,
+) -> bool:
+    """
+    Connect-only: true when Auto Connect finished but skipped the line (PB memory / empty sheet).
+    Includes synthetic no-status dedupe inference from wait_for_completion (connect path only).
+    """
+    if phantom_outcome_suggests_input_already_processed(result, fetch_output_rows=fetch_output_rows):
+        return True
+    if isinstance(result, dict) and result.get("_synthetic_inferred") == _SYNTHETIC_DEDUPE_60S_EMPTY:
+        return True
+    return False
 
 
 def phantom_outcome_suggests_cannot_message_not_first_degree(

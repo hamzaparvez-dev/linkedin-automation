@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 import config as config_module
@@ -14,6 +15,7 @@ from core.phantom_payload import (
     merge_phantom_launch_defaults,
     normalize_engagement_linkedin_url,
     normalize_session_cookie_for_bonus,
+    phantom_connect_deduplication_skipped,
     phantom_failure_suggests_linkedin_session_issue,
     phantom_outcome_suggests_input_already_processed,
     validate_dm_message_sender_argument,
@@ -237,6 +239,48 @@ class TestPhantomPayload(unittest.TestCase):
         r = {"status": "finished"}
         rows = [{"url": "https://www.linkedin.com/in/x", "message": "This line was already processed."}]
         self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=rows))
+
+    def test_phantom_dedupe_runtime_events_slug(self) -> None:
+        """Container #6905101540868028 shape: finished + runtimeEvents slug input-already-processed."""
+        r = {
+            "status": "finished",
+            "message": "Success",
+            "resultObject": {
+                "runtimeEvents": [
+                    {
+                        "slug": "input-already-processed",
+                        "text": "Input is already processed.",
+                        "title": "Input already processed",
+                        "type": "info",
+                    }
+                ]
+            },
+        }
+        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
+
+    def test_phantom_dedupe_spreadsheet_empty_phrase(self) -> None:
+        r = {
+            "status": "finished",
+            "output": "Spreadsheet is empty or everyone is already added from this sheet.",
+        }
+        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
+
+    def test_phantom_connect_dedupe_synthetic_60s(self) -> None:
+        r = {
+            "status": "finished",
+            "_synthetic_inferred": "nostatus_dedupe_60s_empty",
+            "resultObject": None,
+        }
+        self.assertTrue(phantom_connect_deduplication_skipped(r, fetch_output_rows=[]))
+        self.assertFalse(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=[]))
+
+    def test_phantom_dedupe_result_object_json_string(self) -> None:
+        events = [{"slug": "input-already-processed", "text": "Input is already processed."}]
+        r = {
+            "status": "finished",
+            "resultObject": json.dumps({"runtimeEvents": events}),
+        }
+        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
 
     def test_append_fetch_output_to_summary(self) -> None:
         s = append_fetch_output_to_summary("status=ok", [{"a": 1}])

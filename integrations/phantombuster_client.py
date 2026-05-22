@@ -160,6 +160,20 @@ def _fingerprint_nostatus_result(result: dict[str, Any]) -> str:
         return str(result)
 
 
+def _normalize_fetch_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Parse resultObject JSON object strings so downstream dedupe heuristics see nested events."""
+    ro = result.get("resultObject")
+    if isinstance(ro, str):
+        t = ro.strip()
+        if t.startswith("{"):
+            try:
+                parsed = json.loads(t)
+                return {**result, "resultObject": parsed}
+            except (ValueError, TypeError, json.JSONDecodeError):
+                pass
+    return result
+
+
 def _now_utc() -> datetime:
     """Test seam: time source for polling loop (use patch in unit tests)."""
     return datetime.utcnow()
@@ -412,7 +426,7 @@ class PhantombusterClient:
                         status,
                         container_id,
                     )
-                return result
+                return _normalize_fetch_result(result)
             if st_str == "running":
                 logger.debug(
                     "[Phantombuster] status=running, polling (no 60s ghost) container=%s",
@@ -463,7 +477,7 @@ class PhantombusterClient:
                         _RESULTOBJECT_INFER_REPEATS,
                         container_id,
                     )
-                    return combined
+                    return _normalize_fetch_result(combined)
                 logger.debug(
                     "[Phantombuster] Missing status; awaiting stable resultObject (repeat %s/%s) container=%s",
                     nostatus_stable_repeats,
@@ -493,7 +507,7 @@ class PhantombusterClient:
                     _NOSTATUS_DEDUPE_SEC,
                     container_id,
                 )
-                return empty_combined
+                return _normalize_fetch_result(empty_combined)
 
             logger.debug("[Phantombuster] Status: %s — waiting (container=%s)...", status, container_id)
             if _now_utc() - started < _EARLY_FAST_POLL_WINDOW:

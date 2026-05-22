@@ -96,6 +96,17 @@ DEDUPE_CONNECT_ASSUME_INVITED = os.getenv("DEDUPE_CONNECT_ASSUME_INVITED", "fals
     "yes",
     "on",
 )
+# After connect_dedupe_skipped: defer re-attempt via leads.next_dm_attempt_at (ASSIGNED_TO_ACCOUNT only).
+CONNECT_DEDUPE_COOLDOWN_DAYS = int(
+    (os.getenv("CONNECT_DEDUPE_COOLDOWN_DAYS", "7") or "7").strip() or 7
+)
+# When true, dedupe-skipped connects transition lead to FAILED for manual triage (default: cooldown only).
+CONNECT_DEDUPE_FLAG_FAILED = os.getenv("CONNECT_DEDUPE_FLAG_FAILED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # First DM after invite (Connect + DM phantoms only; no list-export sync slot)
 OPTIMISTIC_FIRST_DM_DAYS = int((os.getenv("OPTIMISTIC_FIRST_DM_DAYS", "1") or "1").strip() or 1)
@@ -262,6 +273,26 @@ MIN_SCORE_THRESHOLD = int(os.getenv("MIN_SCORE_THRESHOLD", "6"))
 # (when raw score is lower) so more become QUALIFIED. 0 = disabled.
 APIFY_IMPORT_FLOOR_SCORE = int(
     (os.getenv("APIFY_IMPORT_FLOOR_SCORE", "0") or "0").strip() or 0
+)
+# Post-text CSV import (Google Sheet: Name, Headline, occupation, Profile Url, Post url, Post text)
+REQUIRE_POST_TEXT_ON_IMPORT = os.getenv("REQUIRE_POST_TEXT_ON_IMPORT", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+POST_LEAD_IMPORT_FLOOR_SCORE = int(
+    (os.getenv("POST_LEAD_IMPORT_FLOOR_SCORE", str(MIN_SCORE_THRESHOLD)) or str(MIN_SCORE_THRESHOLD)).strip()
+    or MIN_SCORE_THRESHOLD
+)
+POST_TEXT_LLM_MAX_CHARS = max(
+    200, int((os.getenv("POST_TEXT_LLM_MAX_CHARS", "1200") or "1200").strip() or 1200)
+)
+REQUIRE_POST_TEXT_FOR_LLM = os.getenv("REQUIRE_POST_TEXT_FOR_LLM", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
 )
 
 # ─── Legacy CSV paths (exports + compatibility) ────────────────────────────────

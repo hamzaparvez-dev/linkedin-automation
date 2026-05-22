@@ -97,6 +97,24 @@ Operators can upload **cleaned Apify CSV exports** via the dashboard **Leads (SQ
 
 After import, leads still need **scoring / qualification / assignment** (see OM-3) before engagement picks them up, unless your process promotes them through those steps.
 
+#### Post-text leads (Google Sheet → LLM outreach)
+
+For campaigns sourced from LinkedIn **posts**, export your sheet as **CSV UTF-8** with headers:
+
+`Name`, `Headline`, `occupation`, `Profile Url`, `Post url`, `Post text`
+
+The import maps **Headline** → `linkedin_headline`, **occupation** → `title`, **Post text** → `post_text` (used by the LLM for connect/DM/follow-ups). Set **`outreach_copy_mode": "llm"`** on post-campaign accounts in [`config/accounts.json`](config/accounts.json). Ensure **`OPEN_ROUTER_API_KEY`** is set.
+
+| Step | Command |
+|------|---------|
+| Stop engagement | `pm2 stop leadgen-engagement` |
+| Wipe old pool (backs up DB) | `python main.py --reset-leads --confirm` |
+| Import + promote + assign | `python main.py --import-post-csv path/to/export.csv --campaign YOUR_CAMPAIGN_ID` |
+| Or import via dashboard then promote | Upload on **Leads** page, then `python main.py --promote-post-leads` |
+| Restart engagement | `pm2 restart leadgen-engagement --update-env` |
+
+Env (see [`.env.example`](.env.example)): `REQUIRE_POST_TEXT_ON_IMPORT=true` (default), `POST_LEAD_IMPORT_FLOOR_SCORE` (typically same as `MIN_SCORE_THRESHOLD`), `POST_TEXT_LLM_MAX_CHARS=1200`, optional `REQUIRE_POST_TEXT_FOR_LLM=true` to skip outbound when `post_text` is empty. Daily cron without Apollo: `DAILY_SKIP_APOLLO=true`, `DAILY_SKIP_MERGED_CSV=true`.
+
 ### OM-5. Deployment and operations (Linux VPS, e.g. Hostinger)
 
 Assume **Ubuntu**, repo cloned under e.g. `/var/www/leadgen`, **Python venv** from [`setup.sh`](setup.sh), secrets in **`.env`** and **`config/accounts.json`** (not committed).
@@ -149,7 +167,7 @@ Adjust path, user, and logging directory. Load the same environment as manual ru
 
 **Apify / dashboard-only leads (no Apollo merge file):** set `DAILY_SKIP_APOLLO=true` and `DAILY_SKIP_MERGED_CSV=true` so the run relies on leads already in SQLite (e.g. from `POST /api/leads/import`). Use `APIFY_IMPORT_FLOOR_SCORE` (same value as `MIN_SCORE_THRESHOLD` is typical) so dashboard imports can become `QUALIFIED` without full enrichment. **First DMs** do not require a separate “connections export” Phantombuster: after **`OPTIMISTIC_FIRST_DM_DAYS`**, the DM phantom may be sent while the lead is still **INVITED**; if the phantom output says not 1st degree / cannot message, the app logs `skipped` (`pb_not_connected_yet`), sets `next_dm_attempt_at` using **`DM_NOT_CONNECTED_COOLDOWN_DAYS`**, and retries later.
 
-**Phantombuster “input already processed”:** when the connect/DM phantom skips a line (dedupe memory) but the container still finishes, the app logs `action_log.status=skipped` with `pb_dedupe_already_processed`. The lead is not promoted to `INVITED` unless **`DEDUPE_CONNECT_ASSUME_INVITED=true`** in `.env` (use only when a prior connect really exists; false positives are possible with empty sheets / file mode). Polling the result-object API uses a **fast 3s interval** for the first few minutes, then 30s; if `PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES` is exceeded without a terminal `status`, the app logs `pb_polling_timeout` (distinct from a generic `pb_error`). In the Phantombuster UI, set **file management to “Combine files”** (not “Delete previous files”) for stable dedupe, and use fresh lead URLs when possible.
+**Phantombuster “input already processed”:** when the connect/DM phantom skips a line (dedupe memory) but the container still finishes, the app logs connect dedupe as **`action_log.status=error`** with **`detail` prefixed by `connect_dedupe_skipped|pb_dedupe_already_processed`** (DM/follow-up dedupe still uses **`skipped`**). The lead is not promoted to **`INVITED`** unless **`DEDUPE_CONNECT_ASSUME_INVITED=true`** in `.env`. Otherwise **`CONNECT_DEDUPE_COOLDOWN_DAYS`** (default 7) sets **`next_dm_attempt_at`** so the connect queue moves on. Optional **`CONNECT_DEDUPE_FLAG_FAILED=true`** marks the lead **`FAILED`** for triage. Polling uses a **fast 3s interval** for the first few minutes, then 30s; if **`PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES`** is exceeded without a terminal `status`, the app logs **`pb_polling_timeout`**. In the Phantombuster UI, set **file management to “Combine files”** (not “Delete previous files”) for stable dedupe, and use fresh lead URLs when possible.
 
 #### Production: Phantombuster Ops
 
@@ -659,6 +677,9 @@ Outputs: **operations dashboard** (see below) + **exportable aggregates** (CSV/J
 | `--max-leads N` | Engagement: cap leads processed per account per pass (default `ENGAGEMENT_MAX_LEADS_PER_ACCOUNT`) |
 | `--resume` | Continue from last checkpoint without duplicating sends |
 | `--ingest-reply LEAD_ID TEXT` | Append inbound message, classify (OpenRouter + regex fallback), set terminal status; **does not** send outbound LinkedIn traffic |
+| `--reset-leads --confirm` | Backup DB, delete all leads (and `action_log` unless `--leads-only`) |
+| `--import-post-csv PATH` | Import post-text sheet CSV, then promote/score/assign (`--reset-first --confirm` optional) |
+| `--promote-post-leads` | Promote/score/qualify/assign post-text leads already in SQLite |
 
 *(Current repository CLI may differ; align implementation to this table.)*
 
@@ -740,7 +761,9 @@ Two gate layers exist:
 | `PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES` | Max wait when polling `fetch-result-object` for each connect/DM run (default 20) |
 | `PHANTOMBUSTER_SERIALIZE_AGENT_LAUNCHES` | Default `true`: serialize launch+poll per Phantombuster agent id. `false` risks overlapping runs (unsupported for production stability) |
 | `PHANTOMBUSTER_LOG_POLLING_DEBUG` | Log full per-poll JSON (sensitive; default false) |
-| `DEDUPE_CONNECT_ASSUME_INVITED` | If true, `pb_dedupe_already_processed` on connect also sets lead `INVITED` + `invited_at` for first-DM timing (risky) |
+| `DEDUPE_CONNECT_ASSUME_INVITED` | If true, connect dedupe also sets lead `INVITED` + `invited_at` for first-DM timing (risky) |
+| `CONNECT_DEDUPE_COOLDOWN_DAYS` | After `connect_dedupe_skipped`, defer re-attempt via `next_dm_attempt_at` (default 7) |
+| `CONNECT_DEDUPE_FLAG_FAILED` | If true, dedupe-skipped connects transition lead to `FAILED` (default false) |
 | Apollo / Phantombuster keys | As in `.env.example` |
 
 ---

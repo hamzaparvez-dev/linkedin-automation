@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from core.ai_engine import generate_outreach_message, validate_outreach_plaintext
+from core.ai_engine import _build_user_prompt, generate_outreach_message, validate_outreach_plaintext
 
 
 class TestAiOutreach(unittest.TestCase):
@@ -78,6 +78,22 @@ class TestAiOutreach(unittest.TestCase):
         self.assertEqual(res.source, "llm_regen")
         ok, _ = validate_outreach_plaintext(res.text, stage="dm", recent_bodies=[])
         self.assertTrue(ok)
+
+    def test_build_user_prompt_includes_post_text(self) -> None:
+        lead = {
+            "first_name": "Jane",
+            "company_name": "Acme",
+            "industry": "Web3",
+            "linkedin_headline": "Founder at Acme",
+            "title": "CEO",
+            "post_url": "https://linkedin.com/feed/update/1",
+            "post_text": "We just shipped v2 of our protocol.",
+        }
+        prompt = _build_user_prompt(lead, "connect", "direct")
+        self.assertIn("Post text:", prompt)
+        self.assertIn("protocol", prompt)
+        self.assertIn("Headline:", prompt)
+        self.assertIn("Role:", prompt)
 
     def test_double_llm_failure_uses_fallback(self) -> None:
         lead = {"first_name": "Sam", "company_name": "Co", "industry": "defi"}
