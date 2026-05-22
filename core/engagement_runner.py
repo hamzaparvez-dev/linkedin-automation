@@ -182,11 +182,25 @@ def _resolve_engagement_user_agent(conn, account: AccountConfig) -> str:
 
 
 def _build_connect_argument(linkedin_url: str, message: str) -> dict:
-    return build_engagement_argument(linkedin_url, message)
+    arg = build_engagement_argument(linkedin_url, message)
+    url = (
+        arg.get("spreadsheetUrl")
+        or arg.get("profileUrl")
+        or (arg.get("profileUrls") or [None])[0]
+    )
+    if url:
+        arg["spreadsheetUrl"] = url
+        arg["profileUrl"] = url
+    return arg
 
 
 def _build_dm_argument(linkedin_url: str, message: str) -> dict:
-    return build_dm_message_sender_argument(linkedin_url, message)
+    arg = build_dm_message_sender_argument(linkedin_url, message)
+    url = arg.get("spreadsheetUrl")
+    if url:
+        # Message Sender requires spreadsheetUrl; profileUrl omitted (forbidden by DM validator).
+        arg["spreadsheetUrl"] = url
+    return arg
 
 
 def _engagement_bonus_argument(linkedin_session: str, user_agent: str) -> Optional[dict[str, str]]:
