@@ -221,6 +221,38 @@ if __name__ == "__main__":
         metavar="ACCOUNT_ID",
         help="Set accounts_meta.paused=0 for this account_id after refreshing LinkedIn session / cookies.",
     )
+    parser.add_argument(
+        "--reset-leads",
+        action="store_true",
+        help="Delete all leads (and action_log by default). Requires --confirm. Backs up DB first.",
+    )
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="Required with --reset-leads to confirm destructive wipe.",
+    )
+    parser.add_argument(
+        "--leads-only",
+        action="store_true",
+        help="With --reset-leads: delete leads only, keep action_log.",
+    )
+    parser.add_argument(
+        "--import-post-csv",
+        type=str,
+        default="",
+        metavar="PATH",
+        help="Import Google Sheet post-text CSV (Name, Headline, occupation, Profile Url, Post url, Post text).",
+    )
+    parser.add_argument(
+        "--promote-post-leads",
+        action="store_true",
+        help="Promote/score/qualify/assign post-text leads (ENRICHED → QUALIFIED → ASSIGNED_TO_ACCOUNT).",
+    )
+    parser.add_argument(
+        "--reset-first",
+        action="store_true",
+        help="With --import-post-csv: run --reset-leads --confirm before import.",
+    )
     args = parser.parse_args()
 
     if (args.pause_account or "").strip():
@@ -241,6 +273,71 @@ if __name__ == "__main__":
         try:
             set_account_paused(c, aid, False)
             logger.info("Resumed account %s (engagement allowed again).", aid)
+        finally:
+            c.close()
+        sys.exit(0)
+
+    if args.reset_leads:
+        if not args.confirm:
+            logger.error("--reset-leads requires --confirm")
+            sys.exit(1)
+        from core.lead_reset import reset_leads_database
+
+        init_schema()
+        c = get_connection()
+        try:
+            backup = reset_leads_database(c, leads_only=args.leads_only, backup=True)
+            if backup:
+                logger.info("Database backup: %s", backup)
+            logger.info(
+                "Reset complete: leads deleted%s",
+                "" if args.leads_only else "; action_log cleared",
+            )
+        finally:
+            c.close()
+        sys.exit(0)
+
+    if (args.import_post_csv or "").strip():
+        from core.post_lead_pipeline import import_post_csv_file, promote_post_import_leads
+        from core.lead_reset import reset_leads_database
+
+        csv_path = (args.import_post_csv or "").strip()
+        if not Path(csv_path).is_file():
+            logger.error("CSV not found: %s", csv_path)
+            sys.exit(1)
+        if args.reset_first:
+            if not args.confirm:
+                logger.error("--reset-first requires --confirm")
+                sys.exit(1)
+            init_schema()
+            c = get_connection()
+            try:
+                backup = reset_leads_database(c, leads_only=False, backup=True)
+                if backup:
+                    logger.info("Database backup: %s", backup)
+            finally:
+                c.close()
+        init_schema()
+        c = get_connection()
+        try:
+            imported, skipped, errors = import_post_csv_file(c, csv_path, args.campaign)
+            logger.info("Post CSV import: imported=%s skipped=%s", imported, skipped)
+            if errors:
+                logger.warning("Import errors (sample): %s", errors[:5])
+            stats = promote_post_import_leads(c, accounts_path=args.accounts_config)
+            logger.info("Post lead pipeline: %s", stats)
+        finally:
+            c.close()
+        sys.exit(0)
+
+    if args.promote_post_leads:
+        from core.post_lead_pipeline import promote_post_import_leads
+
+        init_schema()
+        c = get_connection()
+        try:
+            stats = promote_post_import_leads(c, accounts_path=args.accounts_config)
+            logger.info("Post lead pipeline: %s", stats)
         finally:
             c.close()
         sys.exit(0)

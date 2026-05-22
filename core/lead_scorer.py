@@ -19,6 +19,7 @@ import logging
 from config import (
     APIFY_IMPORT_FLOOR_SCORE,
     ICP_INDUSTRY_KEYWORDS,
+    POST_LEAD_IMPORT_FLOOR_SCORE,
     SCORING_RULES,
     MIN_SCORE_THRESHOLD,
     SCORED_LEADS_CSV,
@@ -85,6 +86,11 @@ class LeadScorer:
             if score < APIFY_IMPORT_FLOOR_SCORE:
                 score = APIFY_IMPORT_FLOOR_SCORE
                 breakdown["apify_import_floor"] = APIFY_IMPORT_FLOOR_SCORE
+
+        if POST_LEAD_IMPORT_FLOOR_SCORE > 0 and (lead.get("post_text") or "").strip():
+            if score < POST_LEAD_IMPORT_FLOOR_SCORE:
+                score = POST_LEAD_IMPORT_FLOOR_SCORE
+                breakdown["post_lead_import_floor"] = POST_LEAD_IMPORT_FLOOR_SCORE
 
         lead["score"] = score
         lead["score_breakdown"] = breakdown

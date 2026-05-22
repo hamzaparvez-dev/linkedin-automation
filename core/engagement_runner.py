@@ -22,6 +22,7 @@ from config import (
     PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES,
     PHANTOMBUSTER_CONNECT_AGENT_ID,
     PHANTOMBUSTER_DM_AGENT_ID,
+    REQUIRE_POST_TEXT_FOR_LLM,
     STRICT_DISTINCT_PHANTOM_CONNECT_AGENTS,
     follow_up_eligibility_gaps,
 )
@@ -73,6 +74,15 @@ from integrations.phantombuster_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _missing_post_text_blocks_outbound(account: AccountConfig, lead: dict[str, Any]) -> bool:
+    """When REQUIRE_POST_TEXT_FOR_LLM and account uses llm mode, skip outbound without post_text."""
+    if not REQUIRE_POST_TEXT_FOR_LLM:
+        return False
+    if (account.outreach_copy_mode or "").strip().lower() != "llm":
+        return False
+    return not (lead.get("post_text") or "").strip()
 
 
 def _parse_ts(s: Optional[str]) -> Optional[datetime]:
@@ -521,6 +531,19 @@ def _process_connects(
 
         lead = row_to_lead_dict(row)
         lead_id = lead["lead_id"]
+        if _missing_post_text_blocks_outbound(account, lead):
+            log_action(
+                conn,
+                lead_id=lead_id,
+                account_id=account.account_id,
+                action_type="connect",
+                status="skipped",
+                detail="missing_post_text",
+                strategy_used="",
+                dry_run=dry_run,
+                linkedin_session=linkedin_session,
+            )
+            continue
         strategy = pick_strategy(conn, account)
         ores: OutreachResult = compose_connect_note(lead, strategy, account=account)
         note = ores.text
@@ -869,6 +892,19 @@ def _process_dms(
 
         lead = row_to_lead_dict(row)
         lead_id = lead["lead_id"]
+        if _missing_post_text_blocks_outbound(account, lead):
+            log_action(
+                conn,
+                lead_id=lead_id,
+                account_id=account.account_id,
+                action_type="dm",
+                status="skipped",
+                detail="missing_post_text",
+                strategy_used="",
+                dry_run=dry_run,
+                linkedin_session=linkedin_session,
+            )
+            continue
         strategy = pick_strategy(conn, account)
         recent = recent_messages_for_repetition(conn, account.account_id, 50)
         ores: OutreachResult = compose_from_template(
@@ -1289,6 +1325,19 @@ def _send_followup_dm(
     user_agent = _resolve_engagement_user_agent(conn, account)
     lead = row_to_lead_dict(row)
     lead_id = lead["lead_id"]
+    if _missing_post_text_blocks_outbound(account, lead):
+        log_action(
+            conn,
+            lead_id=lead_id,
+            account_id=account.account_id,
+            action_type=_followup_phantom_log_action(stage_num),
+            status="skipped",
+            detail="missing_post_text",
+            strategy_used="",
+            dry_run=dry_run,
+            linkedin_session=linkedin_session,
+        )
+        return True
     strategy = pick_strategy(conn, account)
     recent = recent_messages_for_repetition(conn, account.account_id, 50)
     stage_key = ("followup_1", "followup_2", "followup_3")[stage_num - 1]

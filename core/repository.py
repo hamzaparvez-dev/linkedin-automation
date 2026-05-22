@@ -149,6 +149,9 @@ def insert_lead_csv_import(
     location: Optional[str] = None,
     years_experience: int = 0,
     recent_activity: Optional[str] = None,
+    linkedin_headline: Optional[str] = None,
+    post_url: Optional[str] = None,
+    post_text: Optional[str] = None,
 ) -> bool:
     """
     Insert a single NEW lead from CSV/Apify import. Does not overwrite existing rows.
@@ -165,9 +168,10 @@ def insert_lead_csv_import(
             lead_id, apollo_person_id, linkedin_url, email, first_name, last_name, full_name,
             company_name, title, industry, location, years_experience,
             connection_count, active_last_30_days, activity_level, recent_activity,
+            linkedin_headline, post_url, post_text,
             score, score_breakdown_json, status, account_id, campaign_id,
             message_history_json, created_at, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(lead_id) DO NOTHING
         """,
         (
@@ -187,6 +191,9 @@ def insert_lead_csv_import(
             None,
             None,
             (str(recent_activity or "").strip() or None),
+            (str(linkedin_headline or "").strip() or None),
+            (str(post_url or "").strip() or None),
+            (str(post_text or "").strip() or None),
             0,
             json.dumps({}),
             "NEW",

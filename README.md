@@ -97,6 +97,24 @@ Operators can upload **cleaned Apify CSV exports** via the dashboard **Leads (SQ
 
 After import, leads still need **scoring / qualification / assignment** (see OM-3) before engagement picks them up, unless your process promotes them through those steps.
 
+#### Post-text leads (Google Sheet → LLM outreach)
+
+For campaigns sourced from LinkedIn **posts**, export your sheet as **CSV UTF-8** with headers:
+
+`Name`, `Headline`, `occupation`, `Profile Url`, `Post url`, `Post text`
+
+The import maps **Headline** → `linkedin_headline`, **occupation** → `title`, **Post text** → `post_text` (used by the LLM for connect/DM/follow-ups). Set **`outreach_copy_mode": "llm"`** on post-campaign accounts in [`config/accounts.json`](config/accounts.json). Ensure **`OPEN_ROUTER_API_KEY`** is set.
+
+| Step | Command |
+|------|---------|
+| Stop engagement | `pm2 stop leadgen-engagement` |
+| Wipe old pool (backs up DB) | `python main.py --reset-leads --confirm` |
+| Import + promote + assign | `python main.py --import-post-csv path/to/export.csv --campaign YOUR_CAMPAIGN_ID` |
+| Or import via dashboard then promote | Upload on **Leads** page, then `python main.py --promote-post-leads` |
+| Restart engagement | `pm2 restart leadgen-engagement --update-env` |
+
+Env (see [`.env.example`](.env.example)): `REQUIRE_POST_TEXT_ON_IMPORT=true` (default), `POST_LEAD_IMPORT_FLOOR_SCORE` (typically same as `MIN_SCORE_THRESHOLD`), `POST_TEXT_LLM_MAX_CHARS=1200`, optional `REQUIRE_POST_TEXT_FOR_LLM=true` to skip outbound when `post_text` is empty. Daily cron without Apollo: `DAILY_SKIP_APOLLO=true`, `DAILY_SKIP_MERGED_CSV=true`.
+
 ### OM-5. Deployment and operations (Linux VPS, e.g. Hostinger)
 
 Assume **Ubuntu**, repo cloned under e.g. `/var/www/leadgen`, **Python venv** from [`setup.sh`](setup.sh), secrets in **`.env`** and **`config/accounts.json`** (not committed).
@@ -659,6 +677,9 @@ Outputs: **operations dashboard** (see below) + **exportable aggregates** (CSV/J
 | `--max-leads N` | Engagement: cap leads processed per account per pass (default `ENGAGEMENT_MAX_LEADS_PER_ACCOUNT`) |
 | `--resume` | Continue from last checkpoint without duplicating sends |
 | `--ingest-reply LEAD_ID TEXT` | Append inbound message, classify (OpenRouter + regex fallback), set terminal status; **does not** send outbound LinkedIn traffic |
+| `--reset-leads --confirm` | Backup DB, delete all leads (and `action_log` unless `--leads-only`) |
+| `--import-post-csv PATH` | Import post-text sheet CSV, then promote/score/assign (`--reset-first --confirm` optional) |
+| `--promote-post-leads` | Promote/score/qualify/assign post-text leads already in SQLite |
 
 *(Current repository CLI may differ; align implementation to this table.)*
 

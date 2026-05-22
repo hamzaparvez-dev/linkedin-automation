@@ -14,6 +14,7 @@ from typing import Any
 
 import sqlite3
 
+from config import REQUIRE_POST_TEXT_ON_IMPORT
 from core.ids import make_lead_id, normalize_linkedin_url
 from core.repository import insert_lead_csv_import
 
@@ -26,6 +27,7 @@ _ALIASES: dict[str, tuple[str, ...]] = {
         "url",
         "profileurl",
         "profile_url",
+        "profile url",
         "linkedinprofileurl",
         "linkedin_profile_url",
         "publicidentifier",
@@ -58,10 +60,12 @@ _ALIASES: dict[str, tuple[str, ...]] = {
         "title",
         "currentjobtitle",
         "jobtitle",
-        "headline",
         "position",
         "occupation",
     ),
+    "linkedin_headline": ("headline",),
+    "post_url": ("posturl", "post_url", "post url"),
+    "post_text": ("posttext", "post_text", "post text"),
     "industry": ("industry", "companyindustry", "sector"),
     "recent_activity": (
         "recent_activity",
@@ -147,6 +151,9 @@ def map_apify_csv_row(row: dict[str, str]) -> dict[str, Any] | None:
         "full_name": full,
         "company_name": _pick(row, "company_name") or None,
         "title": _pick(row, "title") or None,
+        "linkedin_headline": _pick(row, "linkedin_headline") or None,
+        "post_url": _pick(row, "post_url") or None,
+        "post_text": _pick(row, "post_text") or None,
         "industry": _pick(row, "industry") or None,
         "location": _pick(row, "location") or None,
         "years_experience": _parse_years(_pick(row, "years_experience")),
@@ -203,6 +210,11 @@ def import_apify_csv(
             if len(errors) < max_errors:
                 errors.append(f"row {i}: missing_or_invalid_linkedin_url")
             continue
+        if REQUIRE_POST_TEXT_ON_IMPORT and not (mapped.get("post_text") or "").strip():
+            skipped += 1
+            if len(errors) < max_errors:
+                errors.append(f"row {i}: missing_post_text")
+            continue
         try:
             ok = insert_lead_csv_import(
                 conn,
@@ -220,6 +232,9 @@ def import_apify_csv(
                 location=mapped.get("location"),
                 years_experience=int(mapped.get("years_experience") or 0),
                 recent_activity=mapped.get("recent_activity"),
+                linkedin_headline=mapped.get("linkedin_headline"),
+                post_url=mapped.get("post_url"),
+                post_text=mapped.get("post_text"),
             )
         except Exception as e:
             skipped += 1

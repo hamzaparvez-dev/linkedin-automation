@@ -274,6 +274,26 @@ MIN_SCORE_THRESHOLD = int(os.getenv("MIN_SCORE_THRESHOLD", "6"))
 APIFY_IMPORT_FLOOR_SCORE = int(
     (os.getenv("APIFY_IMPORT_FLOOR_SCORE", "0") or "0").strip() or 0
 )
+# Post-text CSV import (Google Sheet: Name, Headline, occupation, Profile Url, Post url, Post text)
+REQUIRE_POST_TEXT_ON_IMPORT = os.getenv("REQUIRE_POST_TEXT_ON_IMPORT", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+POST_LEAD_IMPORT_FLOOR_SCORE = int(
+    (os.getenv("POST_LEAD_IMPORT_FLOOR_SCORE", str(MIN_SCORE_THRESHOLD)) or str(MIN_SCORE_THRESHOLD)).strip()
+    or MIN_SCORE_THRESHOLD
+)
+POST_TEXT_LLM_MAX_CHARS = max(
+    200, int((os.getenv("POST_TEXT_LLM_MAX_CHARS", "1200") or "1200").strip() or 1200)
+)
+REQUIRE_POST_TEXT_FOR_LLM = os.getenv("REQUIRE_POST_TEXT_FOR_LLM", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # ─── Legacy CSV paths (exports + compatibility) ────────────────────────────────
 RAW_LEADS_CSV = "output/1_raw_leads.csv"

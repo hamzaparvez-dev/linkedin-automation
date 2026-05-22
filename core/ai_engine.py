@@ -18,6 +18,7 @@ from config import (
     OPEN_ROUTER_API_KEY,
     OPEN_ROUTER_BASE_URL,
     OPEN_ROUTER_MODEL,
+    POST_TEXT_LLM_MAX_CHARS,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,9 @@ ReplyLabel = Literal["positive", "neutral", "negative", "complex"]
 OUTREACH_SYSTEM_PROMPT = f"""You are a Web3 founder doing LinkedIn outreach. Produce fully personalized
 copy: vary wording for every lead, grounded in the facts in the user message. Never paste a template
 line verbatim. Sound like a peer, not a vendor.
+
+When Post text is provided in the user message, you MUST reference one specific, accurate detail from
+that post (no invented facts, no generic filler). Tie connect notes and DMs to the post theme naturally.
 
 Do NOT: pitch services, use buzzword stacks, or phrases like "we help", "book a call", "our team", or
 "free consultation". No URLs or http(s) in any stage.
@@ -44,29 +48,38 @@ The user message lists the lead (first name, company, segment) and the stage-spe
 to follow. Return only the message text for the requested stage — no quotes, no labels, no preface.
 """
 
+_POST_AWARE_SUFFIX = (
+    " If Post text is provided above, tie the opener to one specific detail from that post (accurate only)."
+)
+
 _STAGE_INSTRUCTIONS: dict[str, str] = {
     "connect": (
         "Stage CONNECT. Structure: greet with {first_name}; tie one concrete reason to {company} or their "
         "space in {segment}; end with a natural link-request (peer-to-peer, under the character and word caps). "
         "Output only the connection note, nothing else."
+        + _POST_AWARE_SUFFIX
     ),
     "dm": (
         "Stage DM (message 1, after they accept). Structure: {first_name}; one line of context on "
         "why {company} / {segment} is interesting to you; one short, open question to start a real conversation. "
         "Output only the DM, nothing else."
+        + _POST_AWARE_SUFFIX
     ),
     "followup_1": (
         "Stage FOLLOWUP_1. Structure: {first_name}; brief, friendly bump referencing your earlier note; "
         "one low-pressure line related to {company} or {segment}. Output only the message, nothing else."
+        + _POST_AWARE_SUFFIX
     ),
     "followup_2": (
         "Stage FOLLOWUP_2. Structure: {first_name}; another light check-in; you are not closing the thread yet. "
         "Tie to {company} or {segment} if natural. Output only the message, nothing else."
+        + _POST_AWARE_SUFFIX
     ),
     "followup_3": (
         "Stage FOLLOWUP_3 (last touch). Structure: {first_name}; clear, polite last note — e.g. assume "
         "bad timing, offer to close the loop, or ask if a quick response is still worth it. You may add "
         "a single optional 👍 as the final character. Output only the message, nothing else."
+        + _POST_AWARE_SUFFIX
     ),
 }
 
@@ -230,6 +243,13 @@ def validate_outreach_plaintext(
     return True, ""
 
 
+def _truncate_post_text(lead: dict[str, Any]) -> str:
+    raw = (lead.get("post_text") or "").strip()
+    if not raw:
+        return ""
+    return raw[:POST_TEXT_LLM_MAX_CHARS]
+
+
 def _fallback_body(stage: OutreachStage, strategy: str, lead: dict[str, Any]) -> str:
     strat = _normalize_strategy(strategy)
     first = (lead.get("first_name") or lead.get("full_name") or "there").split()[0]
@@ -237,6 +257,15 @@ def _fallback_body(stage: OutreachStage, strategy: str, lead: dict[str, Any]) ->
     segment = (str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "Web3").strip()
     if not segment:
         segment = "Web3"
+    if _truncate_post_text(lead):
+        post_lines = {
+            "connect": f"Hi {first}, enjoyed your recent post — would be good to connect.",
+            "dm": f"Hey {first}, your recent post caught my eye — what are you focused on at {company} lately?",
+            "followup_1": f"Hey {first}, circling back on my note — still curious about your recent post.",
+            "followup_2": f"Hey {first}, gentle bump — happy to compare notes if your post sparked anything useful.",
+            "followup_3": f"Hey {first}, last note from my side — should I assume timing is off?",
+        }
+        return post_lines.get(stage, post_lines["connect"])
     key = (stage, strat)
     pool = _FALLBACK.get(key) or _FALLBACK.get((stage, "direct")) or [
         "Hi {first_name}, would be great to connect."
@@ -263,10 +292,24 @@ def _build_user_prompt(
     stage_brief = _STAGE_INSTRUCTIONS[stage].format(
         first_name=first, company=company, segment=seg
     )
+    headline = (lead.get("linkedin_headline") or "").strip()
+    role = (lead.get("title") or "").strip()
+    post_url = (lead.get("post_url") or "").strip()
+    post_snip = _truncate_post_text(lead)
     base = (
         f"Name: {first}\n"
         f"Company: {company}\n"
         f"Segment: {seg}\n"
+    )
+    if headline:
+        base += f"Headline: {headline}\n"
+    if role:
+        base += f"Role: {role}\n"
+    if post_url:
+        base += f"Post URL: {post_url} (context only — do not paste URL in outbound message)\n"
+    if post_snip:
+        base += f"Post text: {post_snip}\n"
+    base += (
         f"Stage: {stage}\n"
         f"Strategy: {strat}\n\n"
         f"{stage_brief}"
