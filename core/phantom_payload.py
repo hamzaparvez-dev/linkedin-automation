@@ -19,7 +19,9 @@ _LI_PATH = re.compile(
 # Strict /in/ profile URL for singular-mode phantoms: no trailing slash, no query (normalized form)
 _IN_PATH = re.compile(r"^https://www\.linkedin\.com/in/[^/?#\s]+$", re.IGNORECASE)
 
-_SINGULAR_ARG_KEYS = frozenset({"profileUrl", "numberOfAddsPerLaunch", "message"})
+_SINGULAR_ARG_KEYS = frozenset(
+    {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"}
+)
 # LinkedIn Message Sender: strict keys in `argument` (connect phantom uses numberOfAddsPerLaunch; Message Sender does not)
 _DM_MSG_SENDER_BODY_KEYS = frozenset(
     {
@@ -145,7 +147,7 @@ def merge_phantom_launch_defaults(
     out = dict(argument)
     mode = (PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE or "").strip().lower()
     if mode == "singular":
-        # Strict phantom: never add inputType, dwellTime, emailChooser, profileUrls, spreadsheetUrl, etc.
+        # Strict phantom: keep profileUrl + spreadsheetUrl + message caps only (session via bonusArgument).
         base = {k: out[k] for k in _SINGULAR_ARG_KEYS if k in out}
         if omit_session_fields:
             return base
@@ -208,14 +210,15 @@ def build_engagement_argument(linkedin_url: str, message: str) -> dict[str, Any]
         raise ValueError("empty_message")
     if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE == "array":
         return {
-            "spreadsheetUrl": "",
+            "spreadsheetUrl": url,
             "profileUrls": [url],
             "numberOfLinesPerLaunch": 1,
             "message": msg,
         }
-    # LinkedIn Auto Connect (singular): only keys the phantom accepts in `argument`
+    # LinkedIn Auto Connect (singular): profileUrl + spreadsheetUrl (phantom input column)
     return {
         "profileUrl": url,
+        "spreadsheetUrl": url,
         "numberOfAddsPerLaunch": 1,
         "message": msg,
     }
@@ -412,6 +415,12 @@ def _validate_singular(
         return False, "profileUrl_not_canonical_remove_query_trailing_slash_use_www"
     if not _IN_PATH.match(url):
         return False, "profileUrl_must_match_https://www.linkedin.com/in/handle"
+    ss_raw = argument.get("spreadsheetUrl")
+    if not isinstance(ss_raw, str) or not ss_raw.strip():
+        return False, "spreadsheetUrl_missing_or_empty"
+    ss = normalize_engagement_linkedin_url(ss_raw)
+    if not ss or ss != url:
+        return False, "spreadsheetUrl_must_match_profileUrl"
     n = argument.get("numberOfAddsPerLaunch")
     try:
         ni = int(n)

@@ -60,6 +60,7 @@ class TestPhantomPayload(unittest.TestCase):
     def test_valid_singular_shape(self) -> None:
         arg = {
             "profileUrl": "https://www.linkedin.com/in/example-person",
+            "spreadsheetUrl": "https://www.linkedin.com/in/example-person",
             "numberOfAddsPerLaunch": 1,
             "message": "Hello there",
             "sessionCookie": _FAKE_SESSION,
@@ -73,9 +74,13 @@ class TestPhantomPayload(unittest.TestCase):
             "https://linkedin.com/in/example-person",
             "  Hi  ",
         )
-        self.assertEqual(set(base.keys()), {"profileUrl", "numberOfAddsPerLaunch", "message"})
+        self.assertEqual(
+            set(base.keys()),
+            {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"},
+        )
         arg = merge_phantom_launch_defaults(base, session_hint="")
         self.assertIn("profileUrl", arg)
+        self.assertEqual(arg["spreadsheetUrl"], "https://www.linkedin.com/in/example-person")
         self.assertEqual(arg["profileUrl"], "https://www.linkedin.com/in/example-person")
         self.assertEqual(arg["numberOfAddsPerLaunch"], 1)
         self.assertEqual(arg["message"], "Hi")
@@ -89,6 +94,7 @@ class TestPhantomPayload(unittest.TestCase):
     def test_rejects_bad_url_singular(self) -> None:
         arg = {
             "profileUrl": "https://example.com/not-linkedin",
+            "spreadsheetUrl": "https://example.com/not-linkedin",
             "numberOfAddsPerLaunch": 1,
             "message": "Hi",
         }
@@ -98,6 +104,7 @@ class TestPhantomPayload(unittest.TestCase):
     def test_rejects_empty_message_singular(self) -> None:
         arg = {
             "profileUrl": "https://www.linkedin.com/in/foo",
+            "spreadsheetUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
             "message": "   ",
         }
@@ -113,7 +120,10 @@ class TestPhantomPayload(unittest.TestCase):
     def test_singular_valid_with_bonus_omits_argument_session(self) -> None:
         base = build_engagement_argument("https://linkedin.com/in/example-person", "Hi")
         arg = merge_phantom_launch_defaults(base, session_hint="", omit_session_fields=True)
-        self.assertEqual(set(arg.keys()), {"profileUrl", "numberOfAddsPerLaunch", "message"})
+        self.assertEqual(
+            set(arg.keys()),
+            {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"},
+        )
         self.assertNotIn("sessionCookie", arg)
         bonus = {
             "sessionCookie": "li_at=" + _FAKE_SESSION,
@@ -127,6 +137,7 @@ class TestPhantomPayload(unittest.TestCase):
 
         arg = {
             "profileUrl": "https://www.linkedin.com/in/foo",
+            "spreadsheetUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
             "message": "x" * (MAX_PHANTOM_DM_MESSAGE_CHARS + 1),
             "sessionCookie": _FAKE_SESSION,
@@ -141,6 +152,7 @@ class TestPhantomPayload(unittest.TestCase):
 
         arg = {
             "profileUrl": "https://www.linkedin.com/in/foo",
+            "spreadsheetUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
             "message": "x" * (MAX_CONNECT_NOTE_CHARS + 1),
             "sessionCookie": _FAKE_SESSION,
@@ -206,6 +218,7 @@ class TestPhantomPayload(unittest.TestCase):
             arg = merge_phantom_launch_defaults(
                 {
                     "profileUrl": "https://www.linkedin.com/in/example-person",
+                    "spreadsheetUrl": "https://www.linkedin.com/in/example-person",
                     "numberOfAddsPerLaunch": 1,
                     "message": "Hi",
                 },
