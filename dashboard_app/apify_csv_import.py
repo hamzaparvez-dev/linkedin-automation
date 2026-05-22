@@ -1,8 +1,10 @@
 """
-Map Apify / LinkedIn CSV export columns to lead fields for dashboard import.
+Map post-text / LinkedIn CSV rows to lead fields for dashboard import.
 
-Apify actors use inconsistent headers (url vs profileUrl vs linkedin_url, etc.).
-Extend _ALIASES below when your export's first row differs — paste headers from the CSV.
+Standard sheet columns (fixed order): Name, Headline, Profile Url, Post text, Post url, occupation.
+
+Inserts delegate to core.repository.insert_lead_csv_import (explicit column list).
+Apify actors may use other headers — extend _ALIASES when needed.
 """
 
 from __future__ import annotations
@@ -118,14 +120,20 @@ def _parse_years(raw: str) -> int:
         return 0
 
 
+def _is_company_linkedin_url(url: str) -> bool:
+    return "/company/" in (url or "").lower()
+
+
 def map_apify_csv_row(row: dict[str, str]) -> dict[str, Any] | None:
     """
     Map one CSV row (header -> cell) to fields for insert_lead_csv_import.
-    Returns None if linkedin_url cannot be resolved after normalization.
+    Returns None if linkedin_url cannot be resolved, is a company page, or is invalid.
     """
     li_raw = _pick(row, "linkedin_url")
+    if _is_company_linkedin_url(li_raw):
+        return None
     li = normalize_linkedin_url(li_raw)
-    if not li:
+    if not li or _is_company_linkedin_url(li):
         return None
 
     apollo = _pick(row, "apollo_person_id")
@@ -207,8 +215,13 @@ def import_apify_csv(
         mapped = map_apify_csv_row(row)
         if not mapped:
             skipped += 1
+            profile = _pick(row, "linkedin_url")
+            if _is_company_linkedin_url(profile):
+                reason = "company_linkedin_url_skipped"
+            else:
+                reason = "missing_or_invalid_linkedin_url"
             if len(errors) < max_errors:
-                errors.append(f"row {i}: missing_or_invalid_linkedin_url")
+                errors.append(f"row {i}: {reason}")
             continue
         if REQUIRE_POST_TEXT_ON_IMPORT and not (mapped.get("post_text") or "").strip():
             skipped += 1

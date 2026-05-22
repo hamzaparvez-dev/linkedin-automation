@@ -93,9 +93,10 @@ export function Leads() {
         <h2>Leads (SQLite)</h2>
         <div className="csv-import-zone">
           <p className="muted" style={{ marginTop: 0 }}>
-            <strong>Apify CSV import</strong> — upload a CSV (e.g. LinkedIn profile export). Rows need a
-            recognizable LinkedIn URL column (<code>url</code>, <code>linkedin_url</code>, etc.). New rows
-            are inserted as <code>NEW</code> with score 0; duplicate <code>lead_id</code> values are skipped.
+            <strong>Post-text CSV import</strong> — export your sheet as UTF-8 CSV with columns:{' '}
+            <code>Name</code>, <code>Headline</code>, <code>Profile Url</code>, <code>Post text</code>,{' '}
+            <code>Post url</code>, <code>occupation</code>. Personal <code>/in/</code> profiles only (company
+            URLs are skipped). After upload, run <code>python main.py --promote-post-leads</code> on the server.
           </p>
           <div className="row">
             <input

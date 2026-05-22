@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import sqlite3
 import unittest
 
-from dashboard_app.apify_csv_import import map_apify_csv_row
+from core.db import init_schema
+from core.repository import insert_lead_csv_import
+from dashboard_app.apify_csv_import import import_apify_csv, map_apify_csv_row
 
 
 class TestApifyCsvImport(unittest.TestCase):
@@ -41,10 +44,10 @@ class TestApifyCsvImport(unittest.TestCase):
         row = {
             "Name": "Jane Doe",
             "Headline": "Building in Web3",
-            "occupation": "Founder",
             "Profile Url": "https://www.linkedin.com/in/jane-doe/",
-            "Post url": "https://www.linkedin.com/feed/update/urn:li:activity:123",
             "Post text": "Excited to share our new protocol launch.",
+            "Post url": "https://www.linkedin.com/feed/update/urn:li:activity:123",
+            "occupation": "Founder",
         }
         m = map_apify_csv_row(row)
         self.assertIsNotNone(m)
@@ -55,6 +58,62 @@ class TestApifyCsvImport(unittest.TestCase):
         self.assertEqual(m["post_url"], "https://www.linkedin.com/feed/update/urn:li:activity:123")
         self.assertEqual(m["post_text"], "Excited to share our new protocol launch.")
         self.assertNotEqual(m["title"], m["linkedin_headline"])
+
+    def test_company_profile_url_skipped(self) -> None:
+        row = {
+            "Name": "Acme Corp",
+            "Headline": "29 followers",
+            "Profile Url": "https://www.linkedin.com/company/acme/posts",
+            "Post text": "Hello world",
+            "Post url": "https://www.linkedin.com/feed/update/1",
+            "occupation": "",
+        }
+        self.assertIsNone(map_apify_csv_row(row))
+
+    def test_csv_import_inserts_without_column_mismatch(self) -> None:
+        csv_body = (
+            "Name,Headline,Profile Url,Post text,Post url,occupation\n"
+            "Test User,Web3 builder,https://www.linkedin.com/in/test-user-xyz/,"
+            "Shipped v2 today.,https://www.linkedin.com/feed/update/1,Founder\n"
+        ).encode("utf-8")
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_schema(conn)
+        try:
+            imported, skipped, errors = import_apify_csv(
+                conn, csv_body, "test-campaign", max_errors=5
+            )
+            self.assertEqual(errors, [])
+            self.assertEqual(imported, 1)
+            self.assertEqual(skipped, 0)
+            row = conn.execute(
+                "SELECT full_name, post_text, linkedin_headline, title FROM leads"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["full_name"], "Test User")
+            self.assertIn("Shipped", row["post_text"])
+        finally:
+            conn.close()
+
+    def test_insert_lead_csv_import_explicit_columns(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_schema(conn)
+        try:
+            ok = insert_lead_csv_import(
+                conn,
+                lead_id="b" * 24,
+                linkedin_url="https://www.linkedin.com/in/abc-unique/",
+                campaign_id="c1",
+                full_name="A",
+                linkedin_headline="H",
+                post_url="https://linkedin.com/feed/1",
+                post_text="Post body",
+                title="CEO",
+            )
+            self.assertTrue(ok)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
