@@ -22,6 +22,8 @@ _IN_PATH = re.compile(r"^https://www\.linkedin\.com/in/[^/?#\s]+$", re.IGNORECAS
 _SINGULAR_ARG_KEYS = frozenset(
     {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"}
 )
+# LinkedIn auth is managed in Phantombuster Workspace UI — never send these in API payloads.
+_PHANTOM_SESSION_FIELD_KEYS = frozenset({"sessionCookie", "userAgent"})
 # LinkedIn Message Sender: strict keys in `argument` (connect phantom uses numberOfAddsPerLaunch; Message Sender does not)
 _DM_MSG_SENDER_BODY_KEYS = frozenset(
     {
@@ -76,18 +78,10 @@ def normalize_session_cookie_for_bonus(raw: str) -> str:
 
 
 def validate_phantom_bonus_argument(bonus: Any) -> tuple[bool, str]:
-    """Validate bonusArgument dict for POST /agents/launch (LinkedIn session override)."""
-    if not isinstance(bonus, dict):
-        return False, "bonus_argument_not_object"
-    sc = bonus.get("sessionCookie")
-    if not isinstance(sc, str) or not sc.strip():
-        return False, "bonus_missing_sessionCookie"
-    if "li_at=" not in sc:
-        return False, "bonus_sessionCookie_must_contain_li_at="
-    ua = bonus.get("userAgent")
-    if not isinstance(ua, str) or not ua.strip():
-        return False, "bonus_userAgent_non_empty_required"
-    return True, ""
+    """bonusArgument is not used — LinkedIn sessions are managed in Phantombuster Workspace UI."""
+    if bonus is None:
+        return True, ""
+    return False, "bonus_argument_not_supported_use_phantombuster_workspace_session"
 
 
 def redact_phantom_bonus_argument_for_log(bonus: dict[str, Any]) -> dict[str, Any]:
@@ -123,16 +117,15 @@ def looks_plausible_browser_user_agent(ua: str) -> bool:
     return any(h in low for h in hints)
 
 
-def merge_phantom_launch_defaults(
-    argument: dict[str, Any],
-    *,
-    session_hint: str = "",
-    omit_session_fields: bool = False,
-) -> dict[str, Any]:
+def strip_phantom_session_fields(argument: dict[str, Any]) -> dict[str, Any]:
+    """Remove sessionCookie/userAgent so Phantombuster uses Workspace-linked accounts."""
+    return {k: v for k, v in argument.items() if k not in _PHANTOM_SESSION_FIELD_KEYS}
+
+
+def merge_phantom_launch_defaults(argument: dict[str, Any]) -> dict[str, Any]:
     """
-    Singular (LinkedIn Auto Connect): argument stays minimal — only profileUrl, numberOfAddsPerLaunch,
-    message (session/auth via bonusArgument when omit_session_fields=True).
-    Array / scraper mode: merge spreadsheet + caps as before.
+    Merge non-auth defaults for connect phantoms. Session cookies are never injected —
+    use the LinkedIn identity connected in Phantombuster Workspace UI.
     """
     from config import (
         PHANTOMBUSTER_DWELL_TIME,
@@ -140,45 +133,13 @@ def merge_phantom_launch_defaults(
         PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE,
         PHANTOMBUSTER_INPUT_TYPE,
         PHANTOMBUSTER_ONLY_SECOND_CIRCLE,
-        PHANTOMBUSTER_SESSION_COOKIE,
-        PHANTOMBUSTER_USER_AGENT,
     )
 
-    out = dict(argument)
+    out = strip_phantom_session_fields(dict(argument))
     mode = (PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE or "").strip().lower()
     if mode == "singular":
-        # Strict phantom: keep profileUrl + spreadsheetUrl + message caps only (session via bonusArgument).
-        base = {k: out[k] for k in _SINGULAR_ARG_KEYS if k in out}
-        if omit_session_fields:
-            return base
-        hint = (session_hint or "").strip()
-        if looks_like_linkedin_session_cookie(hint):
-            sess = hint
-        elif not hint:
-            sess = (PHANTOMBUSTER_SESSION_COOKIE or "").strip()
-        else:
-            sess = ""
-        if not str(base.get("sessionCookie") or "").strip() and sess:
-            base["sessionCookie"] = sess
-        if PHANTOMBUSTER_USER_AGENT:
-            base.setdefault("userAgent", PHANTOMBUSTER_USER_AGENT)
-        return base
+        return {k: out[k] for k in _SINGULAR_ARG_KEYS if k in out}
 
-    if omit_session_fields:
-        out.pop("sessionCookie", None)
-        out.pop("userAgent", None)
-    else:
-        hint = (session_hint or "").strip()
-        if looks_like_linkedin_session_cookie(hint):
-            sess = hint
-        elif not hint:
-            sess = (PHANTOMBUSTER_SESSION_COOKIE or "").strip()
-        else:
-            sess = ""
-        if not str(out.get("sessionCookie") or "").strip() and sess:
-            out["sessionCookie"] = sess
-        if PHANTOMBUSTER_USER_AGENT:
-            out.setdefault("userAgent", PHANTOMBUSTER_USER_AGENT)
     it = (PHANTOMBUSTER_INPUT_TYPE or "profileUrl").strip()
     if it:
         out.setdefault("inputType", it)
@@ -252,34 +213,9 @@ def build_dm_message_sender_argument(linkedin_url: str, message: str) -> dict[st
     }
 
 
-def merge_dm_message_sender_session(
-    argument: dict[str, Any],
-    *,
-    session_hint: str = "",
-    user_agent: str = "",
-) -> dict[str, Any]:
-    """
-    Attach session/UA to Message Sender `argument` without using merge_phantom_launch_defaults
-    (which strips to connect-only singular keys). `sessionCookie` is the raw token (trim only), never `li_at=`.
-    """
-    from config import PHANTOMBUSTER_SESSION_COOKIE, PHANTOMBUSTER_USER_AGENT
-
-    out = dict(argument)
-    hint = (session_hint or "").strip()
-    if looks_like_linkedin_session_cookie(hint):
-        sess = hint
-    elif not hint:
-        sess = (PHANTOMBUSTER_SESSION_COOKIE or "").strip()
-    else:
-        sess = ""
-    if not str(out.get("sessionCookie") or "").strip() and sess:
-        out["sessionCookie"] = sess
-    ua = (user_agent or "").strip()
-    if ua:
-        out["userAgent"] = ua
-    elif PHANTOMBUSTER_USER_AGENT:
-        out.setdefault("userAgent", PHANTOMBUSTER_USER_AGENT)
-    return out
+def finalize_dm_message_sender_argument(argument: dict[str, Any]) -> dict[str, Any]:
+    """Message Sender payload: functional fields only (no sessionCookie / userAgent)."""
+    return strip_phantom_session_fields(dict(argument))
 
 
 def is_message_sender_style_argument(argument: Any) -> bool:
@@ -310,13 +246,13 @@ def _validate_dm_message_sender(
     for k in _DM_MSG_SENDER_BODY_KEYS:
         if k not in argument:
             return False, f"missing_key:{k}"
-    allowed_with: set[str] = set(_DM_MSG_SENDER_BODY_KEYS) | {
-        "spreadsheetUrl",
-        "sessionCookie",
-        "userAgent",
-    }
-    if set(argument.keys()) - allowed_with:
-        return False, f"argument_extra_keys:{','.join(sorted(set(argument.keys()) - allowed_with))}"
+    allowed_with: set[str] = set(_DM_MSG_SENDER_BODY_KEYS) | {"spreadsheetUrl"}
+    extra = set(argument.keys()) - allowed_with
+    if extra:
+        return False, f"argument_extra_keys:{','.join(sorted(extra))}"
+    for forbidden_session in _PHANTOM_SESSION_FIELD_KEYS:
+        if forbidden_session in argument:
+            return False, f"forbidden_key:{forbidden_session}"
     raw = argument.get("spreadsheetUrl")
     if not isinstance(raw, str) or not raw.strip():
         return False, "spreadsheetUrl_missing_or_empty"
@@ -339,12 +275,6 @@ def _validate_dm_message_sender(
     ec = argument.get("emailChooser")
     if not isinstance(ec, str) or not str(ec).strip():
         return False, "emailChooser_empty"
-    sc = argument.get("sessionCookie")
-    if not isinstance(sc, str) or len(sc.strip()) < 50:
-        return False, "missing_or_short_sessionCookie"
-    ua = argument.get("userAgent")
-    if not isinstance(ua, str) or not str(ua).strip():
-        return False, "missing_or_empty_userAgent"
     return True, ""
 
 
@@ -392,15 +322,15 @@ def _validate_array(argument: dict[str, Any]) -> tuple[bool, str]:
 def _validate_singular(
     argument: dict[str, Any],
     *,
-    session_via_bonus: bool = False,
     max_message_len: int,
 ) -> tuple[bool, str]:
     allowed = set(_SINGULAR_ARG_KEYS)
-    if not session_via_bonus:
-        allowed |= {"sessionCookie", "userAgent"}
     extra = set(argument.keys()) - allowed
     if extra:
         return False, f"argument_extra_keys:{','.join(sorted(extra))}"
+    for forbidden_session in _PHANTOM_SESSION_FIELD_KEYS:
+        if forbidden_session in argument:
+            return False, f"forbidden_key:{forbidden_session}"
 
     raw = argument.get("profileUrl")
     if not isinstance(raw, str) or not raw.strip():
@@ -433,13 +363,6 @@ def _validate_singular(
         return False, "message_empty"
     if len(msg) > max_message_len:
         return False, f"message_too_long_max_{max_message_len}_chars"
-    if not session_via_bonus:
-        sc = argument.get("sessionCookie")
-        if not isinstance(sc, str) or len(sc.strip()) < 50:
-            return False, "missing_or_short_sessionCookie_set_PHANTOMBUSTER_SESSION_COOKIE"
-        ua = argument.get("userAgent")
-        if ua is not None and not isinstance(ua, str):
-            return False, "userAgent_bad_type"
     return True, ""
 
 
@@ -453,6 +376,7 @@ def validate_engagement_argument(
 
     For singular `message`, length must be `<= max_message_chars` (default: `MAX_PHANTOM_DM_MESSAGE_CHARS`
     in config). Use `max_message_chars=MAX_CONNECT_NOTE_CHARS` for connection requests.
+  Session auth is not validated here — Phantombuster Workspace provides the LinkedIn session.
     """
     from config import MAX_PHANTOM_DM_MESSAGE_CHARS, PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
 
@@ -463,12 +387,7 @@ def validate_engagement_argument(
     if not isinstance(argument, dict):
         return False, "argument_not_object"
     if bonus_argument is not None:
-        ok_b, msg_b = validate_phantom_bonus_argument(bonus_argument)
-        if not ok_b:
-            return False, msg_b
-        if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE != "singular":
-            return False, "bonus_argument_only_supported_for_singular_profile_mode"
-        return _validate_singular(argument, session_via_bonus=True, max_message_len=mlen)
+        return False, "bonus_argument_not_supported_use_phantombuster_workspace_session"
     if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE == "singular":
         return _validate_singular(argument, max_message_len=mlen)
     return _validate_array(argument)
@@ -547,9 +466,6 @@ def summarize_phantom_result(result: dict[str, Any], *, max_len: int = 900) -> s
     except (TypeError, ValueError):
         raw = str(result)[:max_len]
     s = " | ".join(parts) + " | " + raw
-    return s[:max_len]
-
-
     return s[:max_len]
 
 

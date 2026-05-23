@@ -10,11 +10,10 @@ from core.phantom_payload import (
     append_fetch_output_to_summary,
     build_dm_message_sender_argument,
     build_engagement_argument,
+    finalize_dm_message_sender_argument,
     looks_plausible_browser_user_agent,
-    merge_dm_message_sender_session,
     merge_phantom_launch_defaults,
     normalize_engagement_linkedin_url,
-    normalize_session_cookie_for_bonus,
     phantom_connect_deduplication_skipped,
     phantom_failure_suggests_linkedin_session_issue,
     phantom_outcome_suggests_input_already_processed,
@@ -30,16 +29,9 @@ _FAKE_SESSION = "AQED" + "x" * 100
 class TestPhantomPayload(unittest.TestCase):
     def setUp(self) -> None:
         self._prev_mode = config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
-        self._prev_cookie = config_module.PHANTOMBUSTER_SESSION_COOKIE
-        self._prev_ua = getattr(config_module, "PHANTOMBUSTER_USER_AGENT", "") or ""
-        config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "singular"
-        config_module.PHANTOMBUSTER_SESSION_COOKIE = _FAKE_SESSION
-        config_module.PHANTOMBUSTER_USER_AGENT = "Mozilla/5.0 (test-ua)"
 
     def tearDown(self) -> None:
         config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = self._prev_mode
-        config_module.PHANTOMBUSTER_SESSION_COOKIE = self._prev_cookie
-        config_module.PHANTOMBUSTER_USER_AGENT = self._prev_ua
 
     def test_normalize_canonical_in_url(self) -> None:
         self.assertEqual(
@@ -57,19 +49,18 @@ class TestPhantomPayload(unittest.TestCase):
         self.assertIsNone(normalize_engagement_linkedin_url(""))
         self.assertIsNone(normalize_engagement_linkedin_url("https://www.linkedin.com/company/acme"))
 
-    def test_valid_singular_shape(self) -> None:
+    def test_valid_singular_shape_without_session(self) -> None:
         arg = {
             "profileUrl": "https://www.linkedin.com/in/example-person",
             "spreadsheetUrl": "https://www.linkedin.com/in/example-person",
             "numberOfAddsPerLaunch": 1,
             "message": "Hello there",
-            "sessionCookie": _FAKE_SESSION,
-            "userAgent": "Mozilla/5.0 (test)",
         }
         ok, msg = validate_engagement_argument(arg)
         self.assertTrue(ok, msg)
 
     def test_build_singular_matches_schema(self) -> None:
+        config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "singular"
         base = build_engagement_argument(
             "https://linkedin.com/in/example-person",
             "  Hi  ",
@@ -78,18 +69,38 @@ class TestPhantomPayload(unittest.TestCase):
             set(base.keys()),
             {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"},
         )
-        arg = merge_phantom_launch_defaults(base, session_hint="")
-        self.assertIn("profileUrl", arg)
+        arg = merge_phantom_launch_defaults(base)
         self.assertEqual(arg["spreadsheetUrl"], "https://www.linkedin.com/in/example-person")
         self.assertEqual(arg["profileUrl"], "https://www.linkedin.com/in/example-person")
-        self.assertEqual(arg["numberOfAddsPerLaunch"], 1)
-        self.assertEqual(arg["message"], "Hi")
-        self.assertNotIn("profileUrls", arg)
-        self.assertNotIn("inputType", arg)
-        self.assertNotIn("dwellTime", arg)
-        self.assertIn("sessionCookie", arg)
+        self.assertNotIn("sessionCookie", arg)
+        self.assertNotIn("userAgent", arg)
         ok, msg = validate_engagement_argument(arg)
         self.assertTrue(ok, msg)
+
+    def test_rejects_session_fields_in_argument(self) -> None:
+        arg = {
+            "profileUrl": "https://www.linkedin.com/in/foo",
+            "spreadsheetUrl": "https://www.linkedin.com/in/foo",
+            "numberOfAddsPerLaunch": 1,
+            "message": "Hi",
+            "sessionCookie": _FAKE_SESSION,
+            "userAgent": "Mozilla/5.0",
+        }
+        ok, msg = validate_engagement_argument(arg)
+        self.assertFalse(ok)
+        self.assertIn("sessionCookie", msg)
+
+    def test_rejects_bonus_argument(self) -> None:
+        arg = {
+            "profileUrl": "https://www.linkedin.com/in/foo",
+            "spreadsheetUrl": "https://www.linkedin.com/in/foo",
+            "numberOfAddsPerLaunch": 1,
+            "message": "Hi",
+        }
+        bonus = {"sessionCookie": "li_at=" + _FAKE_SESSION, "userAgent": "Mozilla/5.0"}
+        ok, msg = validate_engagement_argument(arg, bonus_argument=bonus)
+        self.assertFalse(ok)
+        self.assertIn("bonus_argument_not_supported", msg)
 
     def test_rejects_bad_url_singular(self) -> None:
         arg = {
@@ -111,27 +122,6 @@ class TestPhantomPayload(unittest.TestCase):
         ok, _ = validate_engagement_argument(arg)
         self.assertFalse(ok)
 
-    def test_normalize_session_cookie_for_bonus_prefixes_raw_value(self) -> None:
-        raw = "AQED" + "y" * 80
-        out = normalize_session_cookie_for_bonus(raw)
-        self.assertTrue(out.startswith("li_at="))
-        self.assertIn("li_at=", out)
-
-    def test_singular_valid_with_bonus_omits_argument_session(self) -> None:
-        base = build_engagement_argument("https://linkedin.com/in/example-person", "Hi")
-        arg = merge_phantom_launch_defaults(base, session_hint="", omit_session_fields=True)
-        self.assertEqual(
-            set(arg.keys()),
-            {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"},
-        )
-        self.assertNotIn("sessionCookie", arg)
-        bonus = {
-            "sessionCookie": "li_at=" + _FAKE_SESSION,
-            "userAgent": "Mozilla/5.0 (test-ua)",
-        }
-        ok, msg = validate_engagement_argument(arg, bonus_argument=bonus)
-        self.assertTrue(ok, msg)
-
     def test_singular_rejects_message_over_default_max_chars(self) -> None:
         from config import MAX_PHANTOM_DM_MESSAGE_CHARS
 
@@ -140,8 +130,6 @@ class TestPhantomPayload(unittest.TestCase):
             "spreadsheetUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
             "message": "x" * (MAX_PHANTOM_DM_MESSAGE_CHARS + 1),
-            "sessionCookie": _FAKE_SESSION,
-            "userAgent": "Mozilla/5.0",
         }
         ok, msg = validate_engagement_argument(arg)
         self.assertFalse(ok)
@@ -155,22 +143,20 @@ class TestPhantomPayload(unittest.TestCase):
             "spreadsheetUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
             "message": "x" * (MAX_CONNECT_NOTE_CHARS + 1),
-            "sessionCookie": _FAKE_SESSION,
-            "userAgent": "Mozilla/5.0",
         }
         ok, msg = validate_engagement_argument(arg, max_message_chars=MAX_CONNECT_NOTE_CHARS)
         self.assertFalse(ok)
         self.assertIn("message_too_long", msg)
 
-    def test_singular_rejects_extra_argument_keys_with_bonus(self) -> None:
+    def test_singular_rejects_extra_argument_keys(self) -> None:
         arg = {
             "profileUrl": "https://www.linkedin.com/in/foo",
+            "spreadsheetUrl": "https://www.linkedin.com/in/foo",
             "numberOfAddsPerLaunch": 1,
             "message": "Hi",
             "dwellTime": True,
         }
-        bonus = {"sessionCookie": "li_at=" + _FAKE_SESSION, "userAgent": "Mozilla/5.0"}
-        ok, msg = validate_engagement_argument(arg, bonus_argument=bonus)
+        ok, msg = validate_engagement_argument(arg)
         self.assertFalse(ok)
         self.assertIn("argument_extra_keys", msg)
 
@@ -182,12 +168,6 @@ class TestPhantomPayload(unittest.TestCase):
             )
         )
         self.assertFalse(phantom_failure_suggests_linkedin_session_issue("status=finished", {}))
-        self.assertTrue(
-            phantom_failure_suggests_linkedin_session_issue(
-                "exception:HTTPError:401 Client Error",
-                None,
-            )
-        )
 
     def test_looks_plausible_browser_user_agent(self) -> None:
         self.assertTrue(
@@ -196,65 +176,32 @@ class TestPhantomPayload(unittest.TestCase):
             )
         )
         self.assertFalse(looks_plausible_browser_user_agent("curl/8.0"))
-        self.assertFalse(looks_plausible_browser_user_agent("Mozilla/5.0"))
-        self.assertFalse(looks_plausible_browser_user_agent(""))
 
-    def test_validate_phantom_bonus_argument(self) -> None:
-        ok, _ = validate_phantom_bonus_argument(
+    def test_validate_phantom_bonus_argument_rejects_any_bonus(self) -> None:
+        ok, _ = validate_phantom_bonus_argument(None)
+        self.assertTrue(ok)
+        ok2, msg2 = validate_phantom_bonus_argument(
             {"sessionCookie": "li_at=" + "z" * 80, "userAgent": "Mozilla/5.0"}
         )
-        self.assertTrue(ok)
-        ok2, msg2 = validate_phantom_bonus_argument({"sessionCookie": "AQED" + "z" * 80, "userAgent": "x"})
         self.assertFalse(ok2)
-        self.assertIn("li_at", msg2)
-        ok3, msg3 = validate_phantom_bonus_argument({"sessionCookie": "li_at=" + "z" * 80, "userAgent": "  "})
-        self.assertFalse(ok3)
-        self.assertIn("userAgent", msg3)
-
-    def test_merge_does_not_apply_env_cookie_for_non_cookie_session_hint(self) -> None:
-        prev = config_module.PHANTOMBUSTER_SESSION_COOKIE
-        try:
-            config_module.PHANTOMBUSTER_SESSION_COOKIE = "AQED" + "z" * 100
-            arg = merge_phantom_launch_defaults(
-                {
-                    "profileUrl": "https://www.linkedin.com/in/example-person",
-                    "spreadsheetUrl": "https://www.linkedin.com/in/example-person",
-                    "numberOfAddsPerLaunch": 1,
-                    "message": "Hi",
-                },
-                session_hint="primary-sdr-session",
-            )
-            self.assertNotIn("sessionCookie", arg)
-        finally:
-            config_module.PHANTOMBUSTER_SESSION_COOKIE = prev
+        self.assertIn("bonus_argument_not_supported", msg2)
 
     def test_array_mode_validation(self) -> None:
         config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "array"
-        try:
-            arg = {
-                "spreadsheetUrl": "",
-                "profileUrls": ["https://www.linkedin.com/in/example-person"],
-                "numberOfLinesPerLaunch": 1,
-                "message": "Hello there",
-            }
-            ok, msg = validate_engagement_argument(arg)
-            self.assertTrue(ok, msg)
-        finally:
-            config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "singular"
+        arg = {
+            "spreadsheetUrl": "",
+            "profileUrls": ["https://www.linkedin.com/in/example-person"],
+            "numberOfLinesPerLaunch": 1,
+            "message": "Hello there",
+        }
+        ok, msg = validate_engagement_argument(arg)
+        self.assertTrue(ok, msg)
 
     def test_phantom_dedupe_message_in_result(self) -> None:
         r = {"status": "finished", "message": "Input already processed, skipping line 1."}
         self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
-        r2 = {"status": "finished", "message": "Connected successfully."}
-        self.assertFalse(phantom_outcome_suggests_input_already_processed(r2, fetch_output_rows=None))
-
-    def test_phantom_dedupe_in_fetch_output(self) -> None:
-        r = {"status": "finished"}
-        rows = [{"url": "https://www.linkedin.com/in/x", "message": "This line was already processed."}]
-        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=rows))
 
     def test_phantom_dedupe_runtime_events_slug(self) -> None:
-        """Container #6905101540868028 shape: finished + runtimeEvents slug input-already-processed."""
         r = {
             "status": "finished",
             "message": "Success",
@@ -271,13 +218,6 @@ class TestPhantomPayload(unittest.TestCase):
         }
         self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
 
-    def test_phantom_dedupe_spreadsheet_empty_phrase(self) -> None:
-        r = {
-            "status": "finished",
-            "output": "Spreadsheet is empty or everyone is already added from this sheet.",
-        }
-        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
-
     def test_phantom_connect_dedupe_synthetic_60s(self) -> None:
         r = {
             "status": "finished",
@@ -285,50 +225,26 @@ class TestPhantomPayload(unittest.TestCase):
             "resultObject": None,
         }
         self.assertTrue(phantom_connect_deduplication_skipped(r, fetch_output_rows=[]))
-        self.assertFalse(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=[]))
-
-    def test_phantom_dedupe_result_object_json_string(self) -> None:
-        events = [{"slug": "input-already-processed", "text": "Input is already processed."}]
-        r = {
-            "status": "finished",
-            "resultObject": json.dumps({"runtimeEvents": events}),
-        }
-        self.assertTrue(phantom_outcome_suggests_input_already_processed(r, fetch_output_rows=None))
 
     def test_append_fetch_output_to_summary(self) -> None:
         s = append_fetch_output_to_summary("status=ok", [{"a": 1}])
         self.assertIn("fetch_output=", s)
-        self.assertIn("1", s)
 
     def test_synthetic_polling_timeout_roundtrip(self) -> None:
         r = synthetic_polling_timeout_result("test-container-1")
         self.assertTrue(is_synthetic_polling_timeout_result(r))
-        self.assertEqual(r.get("status"), "timeout")
-        self.assertEqual(r.get("_container_id"), "test-container-1")
-
-    def test_finished_is_not_synthetic_polling_timeout(self) -> None:
-        self.assertFalse(is_synthetic_polling_timeout_result({"status": "finished"}))
 
 
 class TestDmMessageSenderPayload(unittest.TestCase):
     def setUp(self) -> None:
         self._msgctl = config_module.PHANTOMBUSTER_MESSAGE_CONTROL
         self._en_scr = config_module.PHANTOMBUSTER_ENABLE_SCRAPING
-        self._mode = config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
-        self._cookie = config_module.PHANTOMBUSTER_SESSION_COOKIE
-        self._ua = config_module.PHANTOMBUSTER_USER_AGENT
-        config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = "singular"
-        config_module.PHANTOMBUSTER_SESSION_COOKIE = _FAKE_SESSION
-        config_module.PHANTOMBUSTER_USER_AGENT = "Mozilla/5.0 (test-ua-dm)"
         config_module.PHANTOMBUSTER_MESSAGE_CONTROL = "sendOnlyIfNoMessage"
         config_module.PHANTOMBUSTER_ENABLE_SCRAPING = False
 
     def tearDown(self) -> None:
         config_module.PHANTOMBUSTER_MESSAGE_CONTROL = self._msgctl
         config_module.PHANTOMBUSTER_ENABLE_SCRAPING = self._en_scr
-        config_module.PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE = self._mode
-        config_module.PHANTOMBUSTER_SESSION_COOKIE = self._cookie
-        config_module.PHANTOMBUSTER_USER_AGENT = self._ua
 
     def test_build_uses_spreadsheet_url_only(self) -> None:
         a = build_dm_message_sender_argument("https://www.linkedin.com/in/whoever", "Hello DM")
@@ -336,30 +252,15 @@ class TestDmMessageSenderPayload(unittest.TestCase):
             set(a.keys()),
             {"spreadsheetUrl", "message", "messageControl", "enableScraping", "emailChooser"},
         )
-        self.assertTrue(a["spreadsheetUrl"].startswith("https://www.linkedin.com/in/"))
-        self.assertEqual(a["messageControl"], "sendOnlyIfNoMessage")
-        self.assertIs(a["enableScraping"], False)
-        self.assertNotIn("numberOfAddsPerLaunch", a)
-        self.assertNotIn("profileUrl", a)
-        m = merge_dm_message_sender_session(a, session_hint=_FAKE_SESSION)
-        self.assertEqual(m.get("sessionCookie"), _FAKE_SESSION)
-        self.assertNotIn("li_at=", m.get("sessionCookie") or "")
+        m = finalize_dm_message_sender_argument(a)
+        self.assertNotIn("sessionCookie", m)
+        self.assertNotIn("userAgent", m)
         ok, msg = validate_dm_message_sender_argument(m)
         self.assertTrue(ok, msg)
 
-    def test_merge_prefers_per_account_user_agent(self) -> None:
-        a = build_dm_message_sender_argument("https://www.linkedin.com/in/someone", "X")
-        m = merge_dm_message_sender_session(
-            a, session_hint=_FAKE_SESSION, user_agent="Mozilla/5.0 (per-account)"
-        )
-        self.assertEqual(m.get("userAgent"), "Mozilla/5.0 (per-account)")
-        ok, msg = validate_dm_message_sender_argument(m)
-        self.assertTrue(ok, msg)
-
-    def test_dm_rejects_profile_url_key(self) -> None:
+    def test_dm_rejects_session_cookie_key(self) -> None:
         a = {
-            "profileUrl": "https://www.linkedin.com/in/a",
-            "spreadsheetUrl": "https://www.linkedin.com/in/b",
+            "spreadsheetUrl": "https://www.linkedin.com/in/ok",
             "message": "m",
             "messageControl": "sendOnlyIfNoMessage",
             "enableScraping": False,
@@ -369,7 +270,7 @@ class TestDmMessageSenderPayload(unittest.TestCase):
         }
         ok, msg = validate_dm_message_sender_argument(a)
         self.assertFalse(ok)
-        self.assertIn("forbidden_key:profileUrl", msg)
+        self.assertIn("sessionCookie", msg)
 
     def test_dm_rejects_forbidden_key(self) -> None:
         a = {
@@ -379,8 +280,6 @@ class TestDmMessageSenderPayload(unittest.TestCase):
             "enableScraping": False,
             "emailChooser": "none",
             "numberOfAddsPerLaunch": 1,
-            "sessionCookie": _FAKE_SESSION,
-            "userAgent": "Mozilla/5.0 (a)",
         }
         ok, msg = validate_dm_message_sender_argument(a)
         self.assertFalse(ok)

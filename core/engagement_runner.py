@@ -33,11 +33,8 @@ from core.phantom_payload import (
     append_fetch_output_to_summary,
     build_dm_message_sender_argument,
     build_engagement_argument,
-    looks_like_linkedin_session_cookie,
-    looks_plausible_browser_user_agent,
-    merge_dm_message_sender_session,
+    finalize_dm_message_sender_argument,
     merge_phantom_launch_defaults,
-    normalize_session_cookie_for_bonus,
     phantom_failure_suggests_linkedin_session_issue,
     phantom_connect_deduplication_skipped,
     phantom_outcome_suggests_cannot_message_not_first_degree,
@@ -49,8 +46,6 @@ from core.phantom_payload import (
 from core.repository import (
     append_message_history,
     bump_metric,
-    get_account_linkedin_profile,
-    get_account_user_agent,
     get_connection,
     log_action,
     recent_messages_for_repetition,
@@ -158,27 +153,9 @@ def _followup_phantom_log_action(stage_num: int) -> str:
     return "followup_dm"
 
 
-def _resolve_engagement_user_agent(conn, account: AccountConfig) -> str:
-    """SQLite accounts_meta → accounts.json → warn + PHANTOMBUSTER_USER_AGENT."""
-    from config import PHANTOMBUSTER_USER_AGENT
-
-    ua = get_account_user_agent(conn, account.account_id).strip()
-    if not ua:
-        ua = (account.user_agent or "").strip()
-    if not ua:
-        ua = (PHANTOMBUSTER_USER_AGENT or "").strip()
-        if ua:
-            logger.warning(
-                "account %s: no user_agent in SQLite/accounts.json; using PHANTOMBUSTER_USER_AGENT fallback",
-                account.account_id,
-            )
-    if ua and not looks_plausible_browser_user_agent(ua):
-        logger.warning(
-            "account %s: user_agent may not look like a browser UA (prefix): %s",
-            account.account_id,
-            ua[:120],
-        )
-    return ua
+def _account_action_log_session(account: AccountConfig) -> str:
+    """Label stored in action_log.linkedin_session (audit only — not a cookie)."""
+    return (account.profile_name or account.account_id).strip() or account.account_id
 
 
 def _build_connect_argument(linkedin_url: str, message: str) -> dict:
@@ -203,43 +180,14 @@ def _build_dm_argument(linkedin_url: str, message: str) -> dict:
     return arg
 
 
-def _engagement_bonus_argument(linkedin_session: str, user_agent: str) -> Optional[dict[str, str]]:
-    """Per-launch session + UA override for POST /agents/launch bonusArgument."""
-    ua = (user_agent or "").strip()
-    if not ua:
-        return None
-    raw = (linkedin_session or "").strip()
-    if not raw or not looks_like_linkedin_session_cookie(raw):
-        return None
-    sc = normalize_session_cookie_for_bonus(raw)
-    return {"sessionCookie": sc, "userAgent": ua}
+def _merge_engagement_phantom_argument(built: dict[str, Any]) -> dict[str, Any]:
+    """Connect launch: functional fields only; Phantombuster Workspace supplies LinkedIn session."""
+    return merge_phantom_launch_defaults(built)
 
 
-def _merge_engagement_phantom_argument(
-    linkedin_session: str,
-    built: dict[str, Any],
-    *,
-    user_agent: str,
-) -> tuple[dict[str, Any], Optional[dict[str, str]]]:
-    bonus = _engagement_bonus_argument(linkedin_session, user_agent)
-    if bonus:
-        arg = merge_phantom_launch_defaults(built, session_hint="", omit_session_fields=True)
-        return arg, bonus
-    arg = merge_phantom_launch_defaults(built, session_hint=linkedin_session)
-    return arg, None
-
-
-def _merge_dm_phantom_argument(
-    linkedin_session: str,
-    built: dict[str, Any],
-    *,
-    user_agent: str,
-) -> tuple[dict[str, Any], None]:
-    """Message Sender: session/UA on root `argument` only; never `bonusArgument`."""
-    arg = merge_dm_message_sender_session(
-        built, session_hint=linkedin_session, user_agent=user_agent
-    )
-    return arg, None
+def _merge_dm_phantom_argument(built: dict[str, Any]) -> dict[str, Any]:
+    """DM launch: functional fields only; never bonusArgument."""
+    return finalize_dm_message_sender_argument(built)
 
 
 def _log_detail(stage: str, strategy: str, src: str) -> str:
@@ -318,8 +266,8 @@ def _maybe_auto_pause_account_on_pb_auth(
     set_account_paused(conn, account.account_id, True)
     logger.error(
         "Auto-paused account %s (accounts_meta.paused=1): Phantombuster output suggests an expired or invalid "
-        "LinkedIn session. Update linkedin_profile in config/accounts.json, re-connect that identity in "
-        "Phantombuster if needed, then run: python main.py --resume-account %s",
+        "LinkedIn session. Re-connect that identity in Phantombuster Workspace, then run: "
+        "python main.py --resume-account %s",
         account.account_id,
         account.account_id,
     )
@@ -445,11 +393,11 @@ def _validate_distinct_dm_agents(accounts: list[AccountConfig]) -> tuple[bool, s
 
 def _log_account_phantom_mapping(accounts: list[AccountConfig], conn) -> None:
     for a in accounts:
-        li = get_account_linkedin_profile(conn, a.account_id) or a.linkedin_profile
+        label = a.profile_name or a.account_id
         logger.info(
-            "Phantombuster mapping account=%s linkedin_profile=%s connect_agent=%s dm_agent=%s",
+            "Phantombuster mapping account=%s identity=%s connect_agent=%s dm_agent=%s",
             a.account_id,
-            li,
+            label,
             _connect_agent_id(a) or "(unset)",
             _dm_agent_id(a) or "(unset)",
         )
@@ -461,7 +409,9 @@ def run_engagement(
     multi_account: bool = True,
     config_path: Optional[str] = None,
     max_leads_per_account: Optional[int] = None,
-) -> None:
+) -> int:
+    """Run one connect/DM/follow-up pass. Returns count of outbound attempts (live or dry-run)."""
+    action_tally = [0]
     doc = load_accounts_document(config_path or ACCOUNT_CONFIG_PATH)
     accounts = doc.accounts if multi_account else [doc.accounts[0]]
     conn = get_connection()
@@ -470,17 +420,17 @@ def run_engagement(
     if not ok_pb_ids:
         logger.error("Engagement aborted: %s", reason_pb)
         conn.close()
-        return
+        return 0
     ok_map, reason = _validate_distinct_connect_agents(accounts)
     if not ok_map:
         logger.error("Engagement aborted: %s", reason)
         conn.close()
-        return
+        return 0
     ok_dm, reason_dm = _validate_distinct_dm_agents(accounts)
     if not ok_dm:
         logger.error("Engagement aborted: %s", reason_dm)
         conn.close()
-        return
+        return 0
 
     _log_account_phantom_mapping(accounts, conn)
     pb = PhantombusterClient()
@@ -494,12 +444,26 @@ def run_engagement(
             dry_run,
             cap,
         )
-        _process_connects(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_dms(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_followup_1(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_followup_2(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_followup_3(conn, pb, account, dry_run=dry_run, sql_limit=cap)
+        _process_connects(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
+        _process_dms(conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally)
+        _process_followup_1(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
+        _process_followup_2(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
+        _process_followup_3(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
     conn.close()
+    return action_tally[0]
+
+
+def _record_engagement_attempt(action_tally: Optional[list[int]]) -> None:
+    if action_tally is not None:
+        action_tally[0] += 1
 
 
 def _process_connects(
@@ -509,10 +473,10 @@ def _process_connects(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     agent_id = _connect_agent_id(account)
-    linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
-    user_agent = _resolve_engagement_user_agent(conn, account)
+    action_log_label = _account_action_log_session(account)
     now_iso = utc_now_iso()
     rows = conn.execute(
         f"""
@@ -555,7 +519,7 @@ def _process_connects(
                 detail="missing_post_text",
                 strategy_used="",
                 dry_run=dry_run,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
             )
             continue
         strategy = pick_strategy(conn, account)
@@ -578,7 +542,7 @@ def _process_connects(
                     detail=reason,
                     strategy_used=strategy,
                     dry_run=dry_run,
-                    linkedin_session=linkedin_session,
+                    linkedin_session=action_log_label,
                 )
                 continue
 
@@ -592,18 +556,14 @@ def _process_connects(
                 detail="no_connect_agent_id",
                 strategy_used=strategy,
                 dry_run=dry_run,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
             )
             logger.warning("No Phantombuster connect agent id — configure per account or env.")
             continue
 
-        arg, bonus_arg = _merge_engagement_phantom_argument(
-            linkedin_session,
-            _build_connect_argument(lead["linkedin_url"], note),
-            user_agent=user_agent,
-        )
+        arg = _merge_engagement_phantom_argument(_build_connect_argument(lead["linkedin_url"], note))
         v_ok, v_reason = validate_engagement_argument(
-            arg, bonus_argument=bonus_arg, max_message_chars=MAX_CONNECT_NOTE_CHARS
+            arg, max_message_chars=MAX_CONNECT_NOTE_CHARS
         )
         if not v_ok:
             logger.warning("Skipping lead %s: invalid_payload:%s", lead_id, v_reason)
@@ -616,7 +576,7 @@ def _process_connects(
                 detail=f"invalid_payload:{v_reason}",
                 strategy_used=strategy,
                 dry_run=dry_run,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
             )
             continue
 
@@ -624,6 +584,7 @@ def _process_connects(
         msg_var = f"{note[:180]}|{detail}"[:500]
 
         if dry_run:
+            _record_engagement_attempt(action_tally)
             log_action(
                 conn,
                 lead_id=lead_id,
@@ -634,16 +595,16 @@ def _process_connects(
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=True,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
                 phantom_response=ores.raw_llm_snippet[:3500],
             )
             logger.info(
-                "[dry-run] connect lead=%s account=%s linkedin_profile=%s",
+                "[dry-run] connect lead=%s account=%s",
                 lead_id,
                 account.account_id,
-                linkedin_session,
             )
         else:
+            _record_engagement_attempt(action_tally)
             phantom_summary = ""
             ok_pb = False
             cid = ""
@@ -663,7 +624,6 @@ def _process_connects(
                     agent_id,
                     arg,
                     timeout_minutes=PHANTOM_ENGAGEMENT_TIMEOUT_MINUTES,
-                    bonus_argument=bonus_arg,
                 )
                 is_poll_timeout = is_synthetic_polling_timeout_result(result)
                 if is_poll_timeout:
@@ -695,14 +655,13 @@ def _process_connects(
                         lead_id,
                     )
                 logger.info(
-                    "Phantombuster connect finished=%s effective=%s poll_timeout=%s container=%s account=%s lead=%s profile=%s",
+                    "Phantombuster connect finished=%s effective=%s poll_timeout=%s container=%s account=%s lead=%s",
                     raw_done,
                     effective_ok,
                     is_poll_timeout,
                     cid,
                     account.account_id,
                     lead_id,
-                    linkedin_session,
                 )
             except Exception as e:
                 ok_pb = False
@@ -719,10 +678,9 @@ def _process_connects(
                     summary=phantom_summary,
                 )
                 logger.exception(
-                    "Phantombuster connect failed account=%s lead=%s profile=%s",
+                    "Phantombuster connect failed account=%s lead=%s",
                     account.account_id,
                     lead_id,
-                    linkedin_session,
                 )
             if is_poll_timeout:
                 _conn_detail = "pb_polling_timeout|" + detail
@@ -778,7 +736,7 @@ def _process_connects(
                     strategy_used=strategy,
                     message_variant=msg_var,
                     dry_run=False,
-                    linkedin_session=linkedin_session,
+                    linkedin_session=action_log_label,
                     phantom_response=_phantom_log(phantom_summary, ores),
                 )
             elif ok_pb and not persisted_ok:
@@ -792,7 +750,7 @@ def _process_connects(
                     strategy_used=strategy,
                     message_variant=msg_var,
                     dry_run=False,
-                    linkedin_session=linkedin_session,
+                    linkedin_session=action_log_label,
                     phantom_response=_phantom_log(phantom_summary, ores),
                 )
             else:
@@ -806,7 +764,7 @@ def _process_connects(
                     strategy_used=strategy,
                     message_variant=msg_var,
                     dry_run=False,
-                    linkedin_session=linkedin_session,
+                    linkedin_session=action_log_label,
                     phantom_response=_phantom_log(phantom_summary, ores),
                 )
 
@@ -867,10 +825,10 @@ def _process_dms(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     agent_id = _dm_agent_id(account)
-    linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
-    user_agent = _resolve_engagement_user_agent(conn, account)
+    action_log_label = _account_action_log_session(account)
     min_days_after_connect, _, _, _ = follow_up_eligibility_gaps()
     wide = max(sql_limit * 4, 40)
     raw_rows = conn.execute(
@@ -916,7 +874,7 @@ def _process_dms(
                 detail="missing_post_text",
                 strategy_used="",
                 dry_run=dry_run,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
             )
             continue
         strategy = pick_strategy(conn, account)
@@ -945,15 +903,11 @@ def _process_dms(
                 detail="no_dm_agent_id",
                 strategy_used=strategy,
                 dry_run=dry_run,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
             )
             continue
 
-        arg, _ = _merge_dm_phantom_argument(
-            linkedin_session,
-            _build_dm_argument(lead["linkedin_url"], body),
-            user_agent=user_agent,
-        )
+        arg = _merge_dm_phantom_argument(_build_dm_argument(lead["linkedin_url"], body))
         v_ok, v_reason = validate_dm_message_sender_argument(arg)
         if not v_ok:
             logger.warning("Skipping lead %s: invalid_payload:%s", lead_id, v_reason)
@@ -966,7 +920,7 @@ def _process_dms(
                 detail=f"invalid_payload:{v_reason}",
                 strategy_used=strategy,
                 dry_run=dry_run,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
             )
             continue
 
@@ -974,6 +928,7 @@ def _process_dms(
         msg_var = f"{body[:180]}|{detail}"[:500]
 
         if dry_run:
+            _record_engagement_attempt(action_tally)
             log_action(
                 conn,
                 lead_id=lead_id,
@@ -984,16 +939,16 @@ def _process_dms(
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=True,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
                 phantom_response=ores.raw_llm_snippet[:3500],
             )
             logger.info(
-                "[dry-run] dm lead=%s account=%s linkedin_profile=%s",
+                "[dry-run] dm lead=%s account=%s",
                 lead_id,
                 account.account_id,
-                linkedin_session,
             )
         else:
+            _record_engagement_attempt(action_tally)
             phantom_summary = ""
             ok_pb = False
             cid = ""
@@ -1086,10 +1041,9 @@ def _process_dms(
                     summary=phantom_summary,
                 )
                 logger.exception(
-                    "DM phantom failed account=%s lead=%s profile=%s",
+                    "DM phantom failed account=%s lead=%s",
                     account.account_id,
                     lead_id,
-                    linkedin_session,
                 )
             if is_poll_timeout:
                 logger.warning(
@@ -1156,7 +1110,7 @@ def _process_dms(
                 strategy_used=strategy,
                 message_variant=msg_var,
                 dry_run=False,
-                linkedin_session=linkedin_session,
+                linkedin_session=action_log_label,
                 phantom_response=_phantom_log(phantom_summary, ores),
             )
             lead_status = str(row["status"] or "").strip()
@@ -1194,10 +1148,11 @@ def _process_followup_1(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     _, gap_fu1, _, _ = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
-    linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
+    action_log_label = _account_action_log_session(account)
     rows_fu1 = conn.execute(
         f"""
         SELECT leads.* FROM leads
@@ -1222,8 +1177,9 @@ def _process_followup_1(
             row,
             stage_num=1,
             dry_run=dry_run,
-            linkedin_session=linkedin_session,
+            action_log_label=action_log_label,
             agent_id=agent_id,
+            action_tally=action_tally,
         )
         if not cont:
             break
@@ -1236,10 +1192,11 @@ def _process_followup_2(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     _, _, gap_fu2, _ = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
-    linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
+    action_log_label = _account_action_log_session(account)
     rows_fu2 = conn.execute(
         f"""
         SELECT leads.* FROM leads
@@ -1264,8 +1221,9 @@ def _process_followup_2(
             row,
             stage_num=2,
             dry_run=dry_run,
-            linkedin_session=linkedin_session,
+            action_log_label=action_log_label,
             agent_id=agent_id,
+            action_tally=action_tally,
         )
         if not cont:
             break
@@ -1278,10 +1236,11 @@ def _process_followup_3(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     _, _, _, gap_fu3 = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
-    linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
+    action_log_label = _account_action_log_session(account)
     rows_fu3 = conn.execute(
         f"""
         SELECT leads.* FROM leads
@@ -1306,8 +1265,9 @@ def _process_followup_3(
             row,
             stage_num=3,
             dry_run=dry_run,
-            linkedin_session=linkedin_session,
+            action_log_label=action_log_label,
             agent_id=agent_id,
+            action_tally=action_tally,
         )
         if not cont:
             break
@@ -1321,8 +1281,9 @@ def _send_followup_dm(
     *,
     stage_num: int,
     dry_run: bool,
-    linkedin_session: str,
+    action_log_label: str,
     agent_id: str,
+    action_tally: Optional[list[int]] = None,
 ) -> bool:
     approval = approve_action(conn, account, "dm")
     if not approval.allowed:
@@ -1336,7 +1297,6 @@ def _send_followup_dm(
     if _next_dm_attempt_blocks_row(row):
         return True
 
-    user_agent = _resolve_engagement_user_agent(conn, account)
     lead = row_to_lead_dict(row)
     lead_id = lead["lead_id"]
     if _missing_post_text_blocks_outbound(account, lead):
@@ -1349,7 +1309,7 @@ def _send_followup_dm(
             detail="missing_post_text",
             strategy_used="",
             dry_run=dry_run,
-            linkedin_session=linkedin_session,
+            linkedin_session=action_log_label,
         )
         return True
     strategy = pick_strategy(conn, account)
@@ -1375,11 +1335,7 @@ def _send_followup_dm(
         return True
 
     phantom_log_action = _followup_phantom_log_action(stage_num)
-    arg, _ = _merge_dm_phantom_argument(
-        linkedin_session,
-        _build_dm_argument(lead["linkedin_url"], body),
-        user_agent=user_agent,
-    )
+    arg = _merge_dm_phantom_argument(_build_dm_argument(lead["linkedin_url"], body))
     v_ok, v_reason = validate_dm_message_sender_argument(arg)
     if not v_ok:
         logger.warning("Skipping lead %s: invalid_payload (Message Sender) followup_dm_%s: %s", lead_id, stage_num, v_reason)
@@ -1392,7 +1348,7 @@ def _send_followup_dm(
             detail=f"followup_dm_{stage_num}|invalid_payload:{v_reason}",
             strategy_used=strategy,
             dry_run=dry_run,
-            linkedin_session=linkedin_session,
+            linkedin_session=action_log_label,
         )
         return True
 
@@ -1401,6 +1357,7 @@ def _send_followup_dm(
     _fu_prefix = f"followup_dm_{stage_num}|"
 
     if dry_run:
+        _record_engagement_attempt(action_tally)
         log_action(
             conn,
             lead_id=lead_id,
@@ -1411,7 +1368,7 @@ def _send_followup_dm(
             strategy_used=strategy,
             message_variant=msg_var,
             dry_run=True,
-            linkedin_session=linkedin_session,
+            linkedin_session=action_log_label,
             phantom_response=ores.raw_llm_snippet[:3500],
         )
         logger.info(
@@ -1422,6 +1379,7 @@ def _send_followup_dm(
             account.account_id,
         )
     else:
+        _record_engagement_attempt(action_tally)
         phantom_summary = ""
         ok_pb = False
         cid = ""
@@ -1606,7 +1564,7 @@ def _send_followup_dm(
             strategy_used=strategy,
             message_variant=msg_var,
             dry_run=False,
-            linkedin_session=linkedin_session,
+            linkedin_session=action_log_label,
             phantom_response=_phantom_log(phantom_summary, ores),
         )
         if is_not_connected:

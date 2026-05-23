@@ -211,11 +211,9 @@ class PhantombusterClient:
         if not agent_id:
             raise ValueError("agent_id is required")
         if bonus_argument is not None:
-            from core.phantom_payload import validate_phantom_bonus_argument
-
-            ok_b, msg_b = validate_phantom_bonus_argument(bonus_argument)
-            if not ok_b:
-                raise ValueError(f"invalid_phantom_bonus_argument:{msg_b}")
+            raise ValueError(
+                "bonus_argument_not_supported_use_phantombuster_workspace_session"
+            )
 
         if isinstance(argument, dict) and (
             argument.get("profileUrls") is not None
@@ -232,7 +230,7 @@ class PhantombusterClient:
             if is_message_sender_style_argument(argument):
                 ok, msg = validate_dm_message_sender_argument(argument)
             else:
-                ok, msg = validate_engagement_argument(argument, bonus_argument=bonus_argument)
+                ok, msg = validate_engagement_argument(argument)
             if not ok:
                 raise ValueError(f"invalid_phantom_argument:{msg}")
             log_engagement_argument_json(argument, agent_id=agent_id)
@@ -247,26 +245,11 @@ class PhantombusterClient:
 
         url = f"{PHANTOMBUSTER_BASE_URL}/agents/launch"
         payload: dict[str, Any] = {"id": agent_id, "argument": argument}
-        if bonus_argument is not None:
-            from core.phantom_payload import redact_phantom_bonus_argument_for_log
-
-            # bonusArgument overrides session/UA for this launch only (per Phantombuster); omitting it on a later
-            # launch does not change the phantom's saved dashboard session.
-            logger.info(
-                "[phantom_bonus_argument] agent_id=%s bonus=%s",
-                agent_id,
-                json.dumps(redact_phantom_bonus_argument_for_log(bonus_argument), ensure_ascii=False, sort_keys=True),
-            )
-            payload["bonusArgument"] = json.dumps(bonus_argument)
 
         try:
-            from core.phantom_payload import redact_phantom_argument_for_log, redact_phantom_bonus_argument_for_log
+            from core.phantom_payload import redact_phantom_argument_for_log
 
             log_payload: dict[str, Any] = {"id": agent_id, "argument": redact_phantom_argument_for_log(argument)}
-            if bonus_argument is not None:
-                log_payload["bonusArgument"] = json.dumps(
-                    redact_phantom_bonus_argument_for_log(bonus_argument), ensure_ascii=False, sort_keys=True
-                )
             logger.info(
                 "[Phantombuster] launch API payload JSON: %s",
                 json.dumps(log_payload, ensure_ascii=False),

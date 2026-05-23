@@ -314,7 +314,7 @@ def create_app() -> FastAPI:
                 out.append(
                     {
                         "account_id": a.account_id,
-                        "linkedin_profile": a.linkedin_profile,
+                        "profile_name": a.profile_name or a.account_id,
                         "user_agent": ua_meta or (a.user_agent or None),
                         "schedule_start": a.schedule_start,
                         "schedule_end": a.schedule_end,
