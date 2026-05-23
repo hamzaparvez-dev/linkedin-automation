@@ -461,7 +461,9 @@ def run_engagement(
     multi_account: bool = True,
     config_path: Optional[str] = None,
     max_leads_per_account: Optional[int] = None,
-) -> None:
+) -> int:
+    """Run one connect/DM/follow-up pass. Returns count of outbound attempts (live or dry-run)."""
+    action_tally = [0]
     doc = load_accounts_document(config_path or ACCOUNT_CONFIG_PATH)
     accounts = doc.accounts if multi_account else [doc.accounts[0]]
     conn = get_connection()
@@ -470,17 +472,17 @@ def run_engagement(
     if not ok_pb_ids:
         logger.error("Engagement aborted: %s", reason_pb)
         conn.close()
-        return
+        return 0
     ok_map, reason = _validate_distinct_connect_agents(accounts)
     if not ok_map:
         logger.error("Engagement aborted: %s", reason)
         conn.close()
-        return
+        return 0
     ok_dm, reason_dm = _validate_distinct_dm_agents(accounts)
     if not ok_dm:
         logger.error("Engagement aborted: %s", reason_dm)
         conn.close()
-        return
+        return 0
 
     _log_account_phantom_mapping(accounts, conn)
     pb = PhantombusterClient()
@@ -494,12 +496,26 @@ def run_engagement(
             dry_run,
             cap,
         )
-        _process_connects(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_dms(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_followup_1(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_followup_2(conn, pb, account, dry_run=dry_run, sql_limit=cap)
-        _process_followup_3(conn, pb, account, dry_run=dry_run, sql_limit=cap)
+        _process_connects(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
+        _process_dms(conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally)
+        _process_followup_1(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
+        _process_followup_2(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
+        _process_followup_3(
+            conn, pb, account, dry_run=dry_run, sql_limit=cap, action_tally=action_tally
+        )
     conn.close()
+    return action_tally[0]
+
+
+def _record_engagement_attempt(action_tally: Optional[list[int]]) -> None:
+    if action_tally is not None:
+        action_tally[0] += 1
 
 
 def _process_connects(
@@ -509,6 +525,7 @@ def _process_connects(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     agent_id = _connect_agent_id(account)
     linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
@@ -624,6 +641,7 @@ def _process_connects(
         msg_var = f"{note[:180]}|{detail}"[:500]
 
         if dry_run:
+            _record_engagement_attempt(action_tally)
             log_action(
                 conn,
                 lead_id=lead_id,
@@ -644,6 +662,7 @@ def _process_connects(
                 linkedin_session,
             )
         else:
+            _record_engagement_attempt(action_tally)
             phantom_summary = ""
             ok_pb = False
             cid = ""
@@ -867,6 +886,7 @@ def _process_dms(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     agent_id = _dm_agent_id(account)
     linkedin_session = get_account_linkedin_profile(conn, account.account_id) or account.linkedin_profile
@@ -974,6 +994,7 @@ def _process_dms(
         msg_var = f"{body[:180]}|{detail}"[:500]
 
         if dry_run:
+            _record_engagement_attempt(action_tally)
             log_action(
                 conn,
                 lead_id=lead_id,
@@ -994,6 +1015,7 @@ def _process_dms(
                 linkedin_session,
             )
         else:
+            _record_engagement_attempt(action_tally)
             phantom_summary = ""
             ok_pb = False
             cid = ""
@@ -1194,6 +1216,7 @@ def _process_followup_1(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     _, gap_fu1, _, _ = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
@@ -1224,6 +1247,7 @@ def _process_followup_1(
             dry_run=dry_run,
             linkedin_session=linkedin_session,
             agent_id=agent_id,
+            action_tally=action_tally,
         )
         if not cont:
             break
@@ -1236,6 +1260,7 @@ def _process_followup_2(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     _, _, gap_fu2, _ = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
@@ -1266,6 +1291,7 @@ def _process_followup_2(
             dry_run=dry_run,
             linkedin_session=linkedin_session,
             agent_id=agent_id,
+            action_tally=action_tally,
         )
         if not cont:
             break
@@ -1278,6 +1304,7 @@ def _process_followup_3(
     *,
     dry_run: bool,
     sql_limit: int,
+    action_tally: Optional[list[int]] = None,
 ) -> None:
     _, _, _, gap_fu3 = follow_up_eligibility_gaps()
     agent_id = _dm_agent_id(account)
@@ -1308,6 +1335,7 @@ def _process_followup_3(
             dry_run=dry_run,
             linkedin_session=linkedin_session,
             agent_id=agent_id,
+            action_tally=action_tally,
         )
         if not cont:
             break
@@ -1323,6 +1351,7 @@ def _send_followup_dm(
     dry_run: bool,
     linkedin_session: str,
     agent_id: str,
+    action_tally: Optional[list[int]] = None,
 ) -> bool:
     approval = approve_action(conn, account, "dm")
     if not approval.allowed:
@@ -1401,6 +1430,7 @@ def _send_followup_dm(
     _fu_prefix = f"followup_dm_{stage_num}|"
 
     if dry_run:
+        _record_engagement_attempt(action_tally)
         log_action(
             conn,
             lead_id=lead_id,
@@ -1422,6 +1452,7 @@ def _send_followup_dm(
             account.account_id,
         )
     else:
+        _record_engagement_attempt(action_tally)
         phantom_summary = ""
         ok_pb = False
         cid = ""

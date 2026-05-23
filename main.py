@@ -391,12 +391,32 @@ if __name__ == "__main__":
 
     if args.engagement_only or args.multi_account_run:
         init_schema()
-        run_engagement(
-            dry_run=resolve_engagement_dry_run(cli_dry=args.dry_run, cli_live=args.live),
-            multi_account=not args.single_account,
-            config_path=args.accounts_config,
-            max_leads_per_account=args.max_leads,
+        idle_seconds = max(
+            5, int((os.getenv("ENGAGEMENT_IDLE_SECONDS") or "60").strip() or 60)
         )
+        logger.info(
+            "Engagement worker loop (idle %ss when no actions taken; Ctrl+C to stop)",
+            idle_seconds,
+        )
+        while True:
+            try:
+                actions = run_engagement(
+                    dry_run=resolve_engagement_dry_run(
+                        cli_dry=args.dry_run, cli_live=args.live
+                    ),
+                    multi_account=not args.single_account,
+                    config_path=args.accounts_config,
+                    max_leads_per_account=args.max_leads,
+                )
+                if actions <= 0:
+                    logger.info(
+                        "Engagement pass: no actions taken across accounts; sleeping %ss",
+                        idle_seconds,
+                    )
+                    time.sleep(idle_seconds)
+            except KeyboardInterrupt:
+                logger.info("Engagement worker stopped")
+                break
         sys.exit(0)
 
     if args.legacy_full:
