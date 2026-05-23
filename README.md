@@ -300,7 +300,7 @@ The system supports **3–5 LinkedIn accounts**. Each account is an **independen
 | Field | Description |
 |--------|-------------|
 | `account_id` | Stable internal identifier |
-| `linkedin_profile` | Reference to profile / session mapping for Phantombuster |
+| `profile_name` | Human label for the account (audit logs; Phantombuster session is linked in Workspace UI) |
 | `daily_limits` | Connect / DM / reply caps (may follow ramp schedule) |
 | `schedule_window` | Allowed local time window for actions (e.g. 09:00–11:00) |
 | `message_strategy` | Primary strategy: `direct`, `curiosity`, `value`, `question`, `observation` |
@@ -818,7 +818,7 @@ Success is measured by **conversation quality and account safety**, not raw send
 | Inbound classification (no auto-reply) | §11 | `core/repository.ingest_inbound_reply`, `core/reply_handler.classify_reply_auto`, `main.py --ingest-reply` |
 | Legacy Clay / Expandi | Appendix B | `main.py --legacy-full` (optional) |
 
-**Setup:** `cp config/accounts.example.json config/accounts.json` and set per-account Phantombuster agent ids (or global `PHANTOMBUSTER_*_AGENT_ID` in `.env`), `linkedin_profile` (session cookie), and optional `profile_name`. The optimistic **INVITED** first-DM path means you do not need a separate “connections list export” phantom; you may still run `python main.py --promote-connected <lead_id>` to mark a lead **CONNECTED** when you want that state in the database.
+**Setup:** `cp config/accounts.example.json config/accounts.json` and set per-account Phantombuster agent ids (or global `PHANTOMBUSTER_*_AGENT_ID` in `.env`), `profile_name`, and connect each LinkedIn identity in the Phantombuster Workspace UI (the script does not send session cookies). The optimistic **INVITED** first-DM path means you do not need a separate “connections list export” phantom; you may still run `python main.py --promote-connected <lead_id>` to mark a lead **CONNECTED** when you want that state in the database.
 
 Engineering should keep this README as the **source of truth** for the human-only reply policy and engagement caps above.
 

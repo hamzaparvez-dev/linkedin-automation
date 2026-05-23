@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class AccountConfig:
     account_id: str
-    linkedin_profile: str
     user_agent: str
     schedule_start: str
     schedule_end: str
@@ -59,7 +58,6 @@ def load_accounts_document(path: str) -> AccountsDocument:
         accounts.append(
             AccountConfig(
                 account_id=str(a["account_id"]),
-                linkedin_profile=str(a.get("linkedin_profile") or a["account_id"]),
                 user_agent=str(a.get("user_agent") or a.get("userAgent") or "").strip(),
                 schedule_start=str(a["schedule_start"]),
                 schedule_end=str(a["schedule_end"]),

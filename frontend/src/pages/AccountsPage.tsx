@@ -3,7 +3,7 @@ import { apiGet } from '../api'
 
 interface AccountOut {
   account_id: string
-  linkedin_profile: string
+  profile_name: string
   user_agent: string | null
   schedule_start: string
   schedule_end: string
@@ -79,7 +79,7 @@ export function AccountsPage() {
                 <tr key={a.account_id}>
                   <td>
                     <strong>{a.account_id}</strong>
-                    <div className="muted small">{a.linkedin_profile}</div>
+                    <div className="muted small">{a.profile_name}</div>
                   </td>
                   <td>{a.primary_strategy}</td>
                   <td>

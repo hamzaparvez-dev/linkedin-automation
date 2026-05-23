@@ -15,7 +15,6 @@ from core.strategy_engine import compose_connect_note, compose_followup_message,
 def _fixed_account() -> AccountConfig:
     return AccountConfig(
         account_id="seq_test",
-        linkedin_profile="session",
         user_agent="Mozilla/5.0",
         schedule_start="00:00",
         schedule_end="23:59",
@@ -99,7 +98,6 @@ class TestLinkedinSequenceTemplates(unittest.TestCase):
         base = _fixed_account()
         acc_llm = AccountConfig(
             account_id=base.account_id,
-            linkedin_profile=base.linkedin_profile,
             user_agent=base.user_agent,
             schedule_start=base.schedule_start,
             schedule_end=base.schedule_end,
@@ -132,7 +130,6 @@ class TestLinkedinSequenceEnvOverride(unittest.TestCase):
     def test_use_fixed_when_env_set(self) -> None:
         acc_llm = AccountConfig(
             account_id="seq_test",
-            linkedin_profile="session",
             user_agent="Mozilla/5.0",
             schedule_start="00:00",
             schedule_end="23:59",

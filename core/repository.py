@@ -49,7 +49,7 @@ def sync_accounts_meta(conn: sqlite3.Connection, doc: AccountsDocument) -> None:
             """,
             (
                 a.account_id,
-                a.linkedin_profile,
+                (a.profile_name or a.account_id),
                 a.user_agent or None,
                 a.schedule_start,
                 a.schedule_end,
@@ -348,16 +348,6 @@ def increment_usage(
         (delta, account_id, day),
     )
     conn.commit()
-
-
-def get_account_linkedin_profile(conn: sqlite3.Connection, account_id: str) -> str:
-    row = conn.execute(
-        "SELECT linkedin_profile FROM accounts_meta WHERE account_id=?",
-        (account_id,),
-    ).fetchone()
-    if not row:
-        return ""
-    return str(row["linkedin_profile"] or "").strip()
 
 
 def get_account_user_agent(conn: sqlite3.Connection, account_id: str) -> str:

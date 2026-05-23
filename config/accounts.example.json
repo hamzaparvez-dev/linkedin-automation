@@ -4,8 +4,7 @@
     {
       "account_id": "acc_a",
       "profile_name": "Srivatsava",
-      "linkedin_profile": "PASTE_LINKEDIN_SESSION_COOKIE_OR_li_at_VALUE_FOR_ACCOUNT_A",
-      "user_agent": "Mozilla/5.0 … paste the same browser User-Agent used when exporting li_at for this account …",
+      "user_agent": "Mozilla/5.0 … optional; not sent to Phantombuster when using Workspace-linked sessions …",
       "schedule_start": "00:00",
       "schedule_end": "23:59",
       "primary_strategy": "direct",
@@ -19,8 +18,7 @@
     {
       "account_id": "acc_c",
       "profile_name": "Jyoti",
-      "linkedin_profile": "PASTE_LINKEDIN_SESSION_COOKIE_OR_li_at_VALUE_FOR_ACCOUNT_C",
-      "user_agent": "Mozilla/5.0 … browser UA for account C (must match the session capture) …",
+      "user_agent": "Mozilla/5.0 … optional …",
       "schedule_start": "00:00",
       "schedule_end": "23:59",
       "primary_strategy": "value",
