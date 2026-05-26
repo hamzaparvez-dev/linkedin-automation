@@ -50,8 +50,8 @@ class TestLinkedinSequenceTemplates(unittest.TestCase):
         ai_engine_mod.MAX_DM_WORDS = self._prev_max_dm
 
     def test_template_variables_explicit_segment(self) -> None:
-        v = template_variables({**_BASE_LEAD, "industry": "DeFi"})
-        self.assertEqual(v["segment"], "DeFi")
+        v = template_variables({**_BASE_LEAD, "industry": "AI startups"})
+        self.assertEqual(v["segment"], "AI startups")
 
     def test_template_variables_empty_segment_without_industry(self) -> None:
         v = template_variables(dict(_BASE_LEAD))
@@ -60,15 +60,15 @@ class TestLinkedinSequenceTemplates(unittest.TestCase):
     def test_connect_without_segment_validates(self) -> None:
         res = render_fixed_sequence("connect", dict(_BASE_LEAD))
         self.assertEqual(res.source, "fixed_sequence")
-        self.assertIn("Web3/Web2 products", res.text)
+        self.assertIn("Would love to connect", res.text)
         self.assertNotIn("working on in ", res.text)
         ok, reason = validate_outreach_plaintext(res.text, stage="connect", recent_bodies=[])
         self.assertTrue(ok, msg=reason)
 
     def test_connect_with_segment_validates(self) -> None:
-        lead = {**_BASE_LEAD, "industry": "DeFi"}
+        lead = {**_BASE_LEAD, "industry": "SaaS"}
         res = render_fixed_sequence("connect", lead)
-        self.assertIn("in DeFi", res.text)
+        self.assertIn("in SaaS", res.text)
         ok, reason = validate_outreach_plaintext(res.text, stage="connect", recent_bodies=[])
         self.assertTrue(ok, msg=reason)
 

@@ -18,6 +18,25 @@ class TestAiOutreach(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "link")
 
+    def test_validate_dm_allows_palnesto_linktree(self) -> None:
+        body = (
+            "Hey Alex,\n"
+            "your post stood out.\n"
+            "Portfolio: https://linktr.ee/palnesto.work\n"
+            "Curious how you handle production?"
+        )
+        ok, reason = validate_outreach_plaintext(body, stage="dm", recent_bodies=[])
+        self.assertTrue(ok, msg=reason)
+
+    def test_validate_connect_rejects_linktree(self) -> None:
+        ok, reason = validate_outreach_plaintext(
+            "Hi — see https://linktr.ee/palnesto.work",
+            stage="connect",
+            recent_bodies=[],
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "link")
+
     def test_validate_rejects_sales_language(self) -> None:
         ok, reason = validate_outreach_plaintext(
             "We help teams like yours ship faster.",
