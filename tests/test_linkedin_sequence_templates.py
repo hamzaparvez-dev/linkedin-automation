@@ -34,7 +34,6 @@ def _fixed_account() -> AccountConfig:
 
 _BASE_LEAD: dict = {
     "first_name": "Sam",
-    "company_name": "Acme Labs",
     "linkedin_url": "https://www.linkedin.com/in/sam",
 }
 

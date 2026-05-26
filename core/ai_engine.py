@@ -68,7 +68,7 @@ _POST_AWARE_SUFFIX = (
 _STAGE_INSTRUCTIONS: dict[str, str] = {
     "connect": (
         "Stage CONNECT (connection request). Under the character and word caps. Greet {first_name}. "
-        "Reference their recent post idea, headline category, or positioning in {segment} / at {company} — "
+        "Reference their recent post idea, headline category, or positioning in {segment} — "
         "one specific insight, not generic praise. Natural connect ask; no hard pitch, no links. "
         "Output only the connection note, nothing else."
         + _POST_AWARE_SUFFIX
@@ -90,7 +90,7 @@ _STAGE_INSTRUCTIONS: dict[str, str] = {
     ),
     "followup_2": (
         "Stage FOLLOWUP_2. Light check-in for {first_name}; insight-driven, low pressure; tie to "
-        "{company} or {segment} if natural. No links. Output only the message, nothing else."
+        "{segment} if natural. No links. Output only the message, nothing else."
         + _POST_AWARE_SUFFIX
     ),
     "followup_3": (
@@ -104,32 +104,32 @@ _STAGE_INSTRUCTIONS: dict[str, str] = {
 # Static fallbacks when LLM is unavailable or fails validation twice.
 _FALLBACK: dict[tuple[str, str], list[str]] = {
     ("connect", "direct"): [
-        "Hey {first_name}, came across your work at {company} in {segment} — interesting direction. Would love to connect.",
+        "Hey {first_name}, came across your work in {segment} — interesting direction. Would love to connect.",
         "Hi {first_name}, your take in {segment} stood out — would be good to connect.",
     ],
     ("connect", "curiosity"): [
-        "Hey {first_name}, came across {company} in {segment} — would love to connect.",
-        "Hi {first_name}, curious about the story you're building at {company}. Open to connect?",
+        "Hey {first_name}, came across your work in {segment} — would love to connect.",
+        "Hi {first_name}, curious about the story you're building. Open to connect?",
     ],
     ("connect", "value"): [
-        "Hey {first_name}, noticed {company} in {segment} — thought it made sense to connect.",
+        "Hey {first_name}, noticed what you're building in {segment} — thought it made sense to connect.",
         "Hi {first_name}, founder in {segment} here — would enjoy connecting.",
     ],
     ("dm", "direct"): [
-        "Hey {first_name},\nyour positioning at {company} caught my eye.\n"
+        "Hey {first_name},\nyour positioning caught my eye.\n"
         "We've been working with founder-led brands on AI-native storytelling and launch visuals.\n"
         "Portfolio: https://linktr.ee/palnesto.work\n"
         "Curious — is content production fully internal for you right now?",
     ],
     ("dm", "curiosity"): [
-        "Hey {first_name},\nquick one on visual storytelling at {company}.\n"
+        "Hey {first_name},\nquick one on visual storytelling.\n"
         "Portfolio: https://linktr.ee/palnesto.work\n"
         "Are you handling production in-house or experimenting with external support?",
     ],
     ("dm", "value"): [
         "Hey {first_name},\nwe've been working with AI/SaaS teams on cinematic launch content lately.\n"
         "Portfolio: https://linktr.ee/palnesto.work\n"
-        "Worth a quick compare on how you're approaching content at {company}?",
+        "Worth a quick compare on how you're approaching content right now?",
     ],
     ("followup_1", "direct"): [
         "Hey {first_name}, just nudging this — happy to share a few visual storytelling examples if useful.",
@@ -156,7 +156,7 @@ _FALLBACK: dict[tuple[str, str], list[str]] = {
         "Hey {first_name}, final follow-up — want me to close the loop or is a quick reply still worth it?",
     ],
     ("followup_3", "value"): [
-        "Hey {first_name}, closing the loop here — all the best with {company}.",
+        "Hey {first_name}, closing the loop here — all the best.",
     ],
 }
 
@@ -309,7 +309,7 @@ def _fallback_body(stage: OutreachStage, strategy: str, lead: dict[str, Any]) ->
                 f"Hey {first},\nyour recent post genuinely stood out.\n"
                 f"We've been helping founder-led brands with AI-native storytelling and launch visuals.\n"
                 f"Portfolio: https://linktr.ee/palnesto.work\n"
-                f"Curious — is content production fully internal at {company} right now?"
+                f"Curious — is content production fully internal for you right now?"
             ),
             "followup_1": f"Hey {first}, just nudging this — happy to share a few examples if useful.",
             "followup_2": f"Hey {first}, gentle bump — still happy to share concepts if timing works.",

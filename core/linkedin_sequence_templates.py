@@ -17,7 +17,7 @@ _CONNECT_WITHOUT_SEGMENT = (
 )
 
 _DM_MESSAGE_1 = """Hey {first_name},
-saw what you're building at {company} — looks like an interesting space.
+your recent post / positioning genuinely stood out.
 We've been helping founder-led AI/SaaS brands with cinematic AI-native storytelling, launch visuals, and short-form content systems lately.
 Portfolio: https://linktr.ee/palnesto.work
 Curious — are you handling content/visual production fully internally, or still experimenting with external support as well?"""
@@ -32,7 +32,7 @@ if anything changes and visual storytelling becomes a priority, feel free to rea
 
 _FOLLOWUP_3 = """Hey {first_name}, closing the loop here —
 if stronger brand content becomes relevant later, happy to connect.
-All the best with {company} 👍"""
+All the best 👍"""
 
 
 def _first_token_name(lead: dict[str, Any]) -> str:
