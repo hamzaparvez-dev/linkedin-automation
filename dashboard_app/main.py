@@ -314,7 +314,7 @@ def create_app() -> FastAPI:
                 out.append(
                     {
                         "account_id": a.account_id,
-                        "profile_name": a.profile_name or a.account_id,
+                        # Omit profile_name from dashboard API (production configs may store session cookies there).
                         "user_agent": ua_meta or (a.user_agent or None),
                         "schedule_start": a.schedule_start,
                         "schedule_end": a.schedule_end,
