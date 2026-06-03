@@ -27,25 +27,38 @@ OutreachStage = Literal["connect", "dm", "followup_1", "followup_2", "followup_3
 ReplyLabel = Literal["positive", "neutral", "negative", "complex"]
 
 
-OUTREACH_SYSTEM_PROMPT = f"""You are a Web3 founder doing LinkedIn outreach. Produce fully personalized
-copy: vary wording for every lead, grounded in the facts in the user message. Never paste a template
-line verbatim. Sound like a peer, not a vendor.
+OUTREACH_SYSTEM_PROMPT = f"""You write highly personalized LinkedIn outreach for an AI-native cinematic
+content and storytelling studio. The studio helps AI startups, SaaS companies, founder-led brands,
+and media-first businesses with cinematic AI-generated launch videos, founder-led storytelling,
+short-form visual storytelling, and AI-native brand content.
 
-When Post text is provided in the user message, you MUST reference one specific, accurate detail from
-that post (no invented facts, no generic filler). Tie connect notes and DMs to the post theme naturally.
+Produce fully personalized copy grounded in the facts in the user message. Vary wording every lead.
+Never paste a template line verbatim. Tone: founder-to-founder, intelligent, conversational,
+naturally curious — not salesy, not corporate, not agency-like. Goal: start relevant conversations,
+create curiosity, establish relevance, and softly qualify — not hard-sell immediately.
 
-Do NOT: pitch services, use buzzword stacks, or phrases like "we help", "book a call", "our team", or
-"free consultation". No URLs or http(s) in any stage.
+Personalization priority (when provided in the user message):
+1. Post text (most important) — reference the ACTUAL idea, insight, or founder take. Never say
+   "great post" or generic praise.
+2. Headline — use to understand company/category and positioning.
+3. Role — use for tone and context.
+
+Do NOT: use buzzword stacks, sound like an agency pitch, or use phrases like "we help", "book a call",
+"our team", or "free consultation". No hard pitch in connection requests.
+
+URLs: no links in connect notes or follow-ups. For first DM only, you may include exactly once:
+https://linktr.ee/palnesto.work (portfolio line). No other URLs.
 
 Output limits (strict):
 - Connect note: at most {MAX_CONNECT_NOTE_WORDS} words AND at most {MAX_CONNECT_NOTE_CHARS} characters
-  (including spaces). No emojis in the connection note.
-- First DM, follow-up 1, follow-up 2, follow-up 3: at most {MAX_DM_WORDS} words each. No emojis
-  in DM, FU1, or FU2. For follow-up 3 only, you may optionally add a single 👍 as the very last
-  character (no other emojis in that message).
+  (including spaces). No emojis. No links. No hard pitch.
+- First DM: at most {MAX_DM_WORDS} words. Short paragraphs; no excessive emojis.
+- Follow-up 1, 2, 3: at most {MAX_DM_WORDS} words each. Short, thoughtful, low pressure.
+  No emojis in DM, FU1, or FU2. For follow-up 3 only, you may optionally add a single 👍 as the
+  very last character.
 
-The user message lists the lead (first name, company, segment) and the stage-specific structure
-to follow. Return only the message text for the requested stage — no quotes, no labels, no preface.
+The user message lists the lead and stage-specific structure to follow. Return only the message
+text for the requested stage — no quotes, no labels, no preface.
 """
 
 _POST_AWARE_SUFFIX = (
@@ -54,31 +67,36 @@ _POST_AWARE_SUFFIX = (
 
 _STAGE_INSTRUCTIONS: dict[str, str] = {
     "connect": (
-        "Stage CONNECT. Structure: greet with {first_name}; tie one concrete reason to {company} or their "
-        "space in {segment}; end with a natural link-request (peer-to-peer, under the character and word caps). "
+        "Stage CONNECT (connection request). Under the character and word caps. Greet {first_name}. "
+        "Reference their recent post idea, headline category, or positioning in {segment} — "
+        "one specific insight, not generic praise. Natural connect ask; no hard pitch, no links. "
         "Output only the connection note, nothing else."
         + _POST_AWARE_SUFFIX
     ),
     "dm": (
-        "Stage DM (message 1, after they accept). Structure: {first_name}; one line of context on "
-        "why {company} / {segment} is interesting to you; one short, open question to start a real conversation. "
-        "Output only the DM, nothing else."
+        "Stage DM (message 1, after they accept). Structure: Hey {first_name}; open with a specific "
+        "insight from their recent post or headline (accurate only); relate naturally to AI storytelling / "
+        "founder visibility; briefly mention cinematic AI-native storytelling, launch visuals, or short-form "
+        "content for founder-led AI/SaaS brands; soft qualify (e.g. internal vs external production). "
+        "Include portfolio line: https://linktr.ee/palnesto.work — no other URLs. Short paragraphs; "
+        "no buzzwords. Output only the DM, nothing else."
         + _POST_AWARE_SUFFIX
     ),
     "followup_1": (
-        "Stage FOLLOWUP_1. Structure: {first_name}; brief, friendly bump referencing your earlier note; "
-        "one low-pressure line related to {company} or {segment}. Output only the message, nothing else."
+        "Stage FOLLOWUP_1. Short thoughtful nudge for {first_name}; reference {segment} or visual "
+        "storytelling / content systems if natural; offer to share examples or concepts if useful. "
+        "Low pressure. No links. Output only the message, nothing else."
         + _POST_AWARE_SUFFIX
     ),
     "followup_2": (
-        "Stage FOLLOWUP_2. Structure: {first_name}; another light check-in; you are not closing the thread yet. "
-        "Tie to {company} or {segment} if natural. Output only the message, nothing else."
+        "Stage FOLLOWUP_2. Light check-in for {first_name}; insight-driven, low pressure; tie to "
+        "{segment} if natural. No links. Output only the message, nothing else."
         + _POST_AWARE_SUFFIX
     ),
     "followup_3": (
-        "Stage FOLLOWUP_3 (last touch). Structure: {first_name}; clear, polite last note — e.g. assume "
-        "bad timing, offer to close the loop, or ask if a quick response is still worth it. You may add "
-        "a single optional 👍 as the final character. Output only the message, nothing else."
+        "Stage FOLLOWUP_3 (last touch). Polite close for {first_name}; assume timing may be off or "
+        "offer to leave the loop open. You may add a single optional 👍 as the final character. "
+        "No links. Output only the message, nothing else."
         + _POST_AWARE_SUFFIX
     ),
 }
@@ -86,52 +104,59 @@ _STAGE_INSTRUCTIONS: dict[str, str] = {
 # Static fallbacks when LLM is unavailable or fails validation twice.
 _FALLBACK: dict[tuple[str, str], list[str]] = {
     ("connect", "direct"): [
-        "Hi {first_name}, saw your work at {company} — would be good to connect.",
-        "Hi {first_name}, building in {segment} too. Happy to connect.",
+        "Hey {first_name}, came across your work in {segment} — interesting direction. Would love to connect.",
+        "Hi {first_name}, your take in {segment} stood out — would be good to connect.",
     ],
     ("connect", "curiosity"): [
-        "Hi {first_name}, came across {company} in {segment} — would love to connect.",
-        "Hi {first_name}, curious about what you're building at {company}. Open to connect?",
+        "Hey {first_name}, came across your work in {segment} — would love to connect.",
+        "Hi {first_name}, curious about the story you're building. Open to connect?",
     ],
     ("connect", "value"): [
-        "Hi {first_name}, noticed {company} in {segment} — thought a peer connect made sense.",
-        "Hi {first_name}, {segment} founder here — would enjoy connecting.",
+        "Hey {first_name}, noticed what you're building in {segment} — thought it made sense to connect.",
+        "Hi {first_name}, founder in {segment} here — would enjoy connecting.",
     ],
     ("dm", "direct"): [
-        "Hey {first_name}, are you focused more on growth or product at {company} right now?",
+        "Hey {first_name},\nyour positioning caught my eye.\n"
+        "We've been working with founder-led brands on AI-native storytelling and launch visuals.\n"
+        "Portfolio: https://linktr.ee/palnesto.work\n"
+        "Curious — is content production fully internal for you right now?",
     ],
     ("dm", "curiosity"): [
-        "Hey {first_name}, quick one — how are you thinking about growth at {company} lately?",
+        "Hey {first_name},\nquick one on visual storytelling.\n"
+        "Portfolio: https://linktr.ee/palnesto.work\n"
+        "Are you handling production in-house or experimenting with external support?",
     ],
     ("dm", "value"): [
-        "Hey {first_name}, curious how you're approaching traction at {company} these days?",
+        "Hey {first_name},\nwe've been working with AI/SaaS teams on cinematic launch content lately.\n"
+        "Portfolio: https://linktr.ee/palnesto.work\n"
+        "Worth a quick compare on how you're approaching content right now?",
     ],
     ("followup_1", "direct"): [
-        "Hey {first_name}, wanted to follow up on my note — still open to connect when you have a moment.",
+        "Hey {first_name}, just nudging this — happy to share a few visual storytelling examples if useful.",
     ],
     ("followup_1", "curiosity"): [
-        "Hey {first_name}, circling back — curious if a short connect still makes sense on your side.",
+        "Hey {first_name}, circling back — brands in {segment} seem to be leaning harder into content systems lately.",
     ],
     ("followup_1", "value"): [
-        "Hey {first_name}, gentle bump from my side — happy to compare notes if timing works.",
+        "Hey {first_name}, gentle bump — happy to share concepts if visual storytelling is on your radar.",
     ],
     ("followup_2", "direct"): [
-        "Hey {first_name}, checking in again — still open to a quick exchange when you have a moment?",
+        "Hey {first_name}, checking in once more — no pressure, just wanted to leave the door open.",
     ],
     ("followup_2", "curiosity"): [
-        "Hey {first_name}, curious if timing loosened at all for a short peer chat on your side?",
+        "Hey {first_name}, curious if timing shifted on your side for a quick exchange.",
     ],
     ("followup_2", "value"): [
-        "Hey {first_name}, one more ping — still happy to compare notes if useful on your side.",
+        "Hey {first_name}, one more ping — still happy to share examples if it helps.",
     ],
     ("followup_3", "direct"): [
-        "Hey {first_name}, last note — should I assume you're swamped and close this out?",
+        "Hey {first_name}, last note from my side — should I assume timing is off?",
     ],
     ("followup_3", "curiosity"): [
-        "Hey {first_name}, final follow-up — want me to leave it here or is a quick reply worth it?",
+        "Hey {first_name}, final follow-up — want me to close the loop or is a quick reply still worth it?",
     ],
     ("followup_3", "value"): [
-        "Hey {first_name}, closing the loop on my side unless you'd like to pick this up later.",
+        "Hey {first_name}, closing the loop here — all the best.",
     ],
 }
 
@@ -207,8 +232,25 @@ def _emoji_violates_stage_policy(s: str, stage: OutreachStage) -> bool:
     return _has_emoji(t)
 
 
-def _has_link_like(s: str) -> bool:
+_DM_ALLOWED_PORTFOLIO_URLS = (
+    "https://linktr.ee/palnesto.work",
+    "https://linktr.ee/palnesto.work/",
+    "http://linktr.ee/palnesto.work",
+    "http://linktr.ee/palnesto.work/",
+)
+
+
+def _has_link_like(s: str, *, stage: Optional[OutreachStage] = None) -> bool:
     sl = s.lower()
+    if stage == "dm":
+        remainder = sl
+        for allowed in _DM_ALLOWED_PORTFOLIO_URLS:
+            remainder = remainder.replace(allowed.lower(), "")
+        if "http://" in remainder or "https://" in remainder:
+            return True
+        if re.search(r"\bwww\.\S+", remainder):
+            return True
+        return False
     if "http://" in sl or "https://" in sl:
         return True
     if re.search(r"\bwww\.\S+", sl):
@@ -231,13 +273,14 @@ def validate_outreach_plaintext(
         return False, "too_long"
     if stage == "connect" and len(t) > MAX_CONNECT_NOTE_CHARS:
         return False, "too_many_chars"
-    if _has_link_like(t):
+    if _has_link_like(t, stage=stage):
         return False, "link"
     if _SALES_BANNED.search(t):
         return False, "sales_language"
     if _emoji_violates_stage_policy(t, stage):
         return False, "emoji"
-    ok, reason = validate_message(t, max_words=mw, recent_bodies=recent_bodies, max_url_count=0)
+    max_urls = 1 if stage == "dm" else 0
+    ok, reason = validate_message(t, max_words=mw, recent_bodies=recent_bodies, max_url_count=max_urls)
     if not ok:
         return False, reason
     return True, ""
@@ -254,15 +297,22 @@ def _fallback_body(stage: OutreachStage, strategy: str, lead: dict[str, Any]) ->
     strat = _normalize_strategy(strategy)
     first = (lead.get("first_name") or lead.get("full_name") or "there").split()[0]
     company = lead.get("company_name") or "your company"
-    segment = (str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "Web3").strip()
+    segment = (
+        str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "AI-native content"
+    ).strip()
     if not segment:
-        segment = "Web3"
+        segment = "AI-native content"
     if _truncate_post_text(lead):
         post_lines = {
-            "connect": f"Hi {first}, enjoyed your recent post — would be good to connect.",
-            "dm": f"Hey {first}, your recent post caught my eye — what are you focused on at {company} lately?",
-            "followup_1": f"Hey {first}, circling back on my note — still curious about your recent post.",
-            "followup_2": f"Hey {first}, gentle bump — happy to compare notes if your post sparked anything useful.",
+            "connect": f"Hey {first}, came across your recent post — really interesting direction. Would love to connect.",
+            "dm": (
+                f"Hey {first},\nyour recent post genuinely stood out.\n"
+                f"We've been helping founder-led brands with AI-native storytelling and launch visuals.\n"
+                f"Portfolio: https://linktr.ee/palnesto.work\n"
+                f"Curious — is content production fully internal for you right now?"
+            ),
+            "followup_1": f"Hey {first}, just nudging this — happy to share a few examples if useful.",
+            "followup_2": f"Hey {first}, gentle bump — still happy to share concepts if timing works.",
             "followup_3": f"Hey {first}, last note from my side — should I assume timing is off?",
         }
         return post_lines.get(stage, post_lines["connect"])
@@ -285,9 +335,11 @@ def _build_user_prompt(
 ) -> str:
     first = (lead.get("first_name") or lead.get("full_name") or "there").split()[0]
     company = lead.get("company_name") or "your company"
-    seg = (str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "Web3").strip()
+    seg = (
+        str(lead.get("segment") or lead.get("industry") or "") or industry_signal(lead) or "AI-native content"
+    ).strip()
     if not seg:
-        seg = "Web3"
+        seg = "AI-native content"
     strat = _normalize_strategy(strategy)
     stage_brief = _STAGE_INSTRUCTIONS[stage].format(
         first_name=first, company=company, segment=seg

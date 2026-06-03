@@ -22,7 +22,7 @@ _IN_PATH = re.compile(r"^https://www\.linkedin\.com/in/[^/?#\s]+$", re.IGNORECAS
 _SINGULAR_ARG_KEYS = frozenset(
     {"profileUrl", "spreadsheetUrl", "numberOfAddsPerLaunch", "message"}
 )
-# LinkedIn auth is managed in Phantombuster Workspace UI — never send these in API payloads.
+# Injected at launch from GET /agents/fetch (Workspace UI). Omitted from engagement_runner builders.
 _PHANTOM_SESSION_FIELD_KEYS = frozenset({"sessionCookie", "userAgent"})
 # LinkedIn Message Sender: strict keys in `argument` (connect phantom uses numberOfAddsPerLaunch; Message Sender does not)
 _DM_MSG_SENDER_BODY_KEYS = frozenset(
@@ -118,8 +118,64 @@ def looks_plausible_browser_user_agent(ua: str) -> bool:
 
 
 def strip_phantom_session_fields(argument: dict[str, Any]) -> dict[str, Any]:
-    """Remove sessionCookie/userAgent so Phantombuster uses Workspace-linked accounts."""
+    """Remove sessionCookie/userAgent from builder output (merged at launch from UI fetch)."""
     return {k: v for k, v in argument.items() if k not in _PHANTOM_SESSION_FIELD_KEYS}
+
+
+def _parse_agent_argument_blob(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, TypeError, json.JSONDecodeError):
+            pass
+    return {}
+
+
+def extract_ui_session_from_agent_fetch(payload: Any) -> dict[str, str]:
+    """
+    Read sessionCookie / userAgent saved in Phantombuster Workspace from GET /agents/fetch JSON.
+    Supports `argument` at root or under `data`, and argument as object or JSON string.
+    """
+    roots: list[dict[str, Any]] = []
+    if isinstance(payload, dict):
+        roots.append(payload)
+        nested = payload.get("data")
+        if isinstance(nested, dict):
+            roots.append(nested)
+    out: dict[str, str] = {}
+    for root in roots:
+        arg = _parse_agent_argument_blob(root.get("argument"))
+        if not arg:
+            continue
+        sc = arg.get("sessionCookie")
+        if isinstance(sc, str) and sc.strip():
+            out["sessionCookie"] = sc.strip()
+        ua = arg.get("userAgent")
+        if isinstance(ua, str) and ua.strip():
+            out["userAgent"] = ua.strip()
+        if out.get("sessionCookie"):
+            return out
+    return out
+
+
+def merge_ui_session_into_launch_argument(
+    dynamic_argument: dict[str, Any],
+    ui_session: dict[str, str],
+) -> dict[str, Any]:
+    """Overlay fresh UI session onto API-built lead fields (dynamic keys win except auth)."""
+    merged = dict(dynamic_argument)
+    sc = (ui_session.get("sessionCookie") or "").strip()
+    if not sc:
+        raise ValueError("agent_fetch_missing_sessionCookie")
+    merged["sessionCookie"] = sc
+    ua = (ui_session.get("userAgent") or "").strip()
+    if ua:
+        merged["userAgent"] = ua
+    return merged
 
 
 def merge_phantom_launch_defaults(argument: dict[str, Any]) -> dict[str, Any]:
@@ -227,6 +283,7 @@ def _validate_dm_message_sender(
     argument: dict[str, Any],
     *,
     max_message_len: int,
+    for_launch: bool = False,
 ) -> tuple[bool, str]:
     if not isinstance(argument, dict):
         return False, "argument_not_object"
@@ -247,12 +304,17 @@ def _validate_dm_message_sender(
         if k not in argument:
             return False, f"missing_key:{k}"
     allowed_with: set[str] = set(_DM_MSG_SENDER_BODY_KEYS) | {"spreadsheetUrl"}
+    if for_launch:
+        allowed_with |= _PHANTOM_SESSION_FIELD_KEYS
     extra = set(argument.keys()) - allowed_with
     if extra:
         return False, f"argument_extra_keys:{','.join(sorted(extra))}"
-    for forbidden_session in _PHANTOM_SESSION_FIELD_KEYS:
-        if forbidden_session in argument:
-            return False, f"forbidden_key:{forbidden_session}"
+    if not for_launch:
+        for forbidden_session in _PHANTOM_SESSION_FIELD_KEYS:
+            if forbidden_session in argument:
+                return False, f"forbidden_key:{forbidden_session}"
+    elif not isinstance(argument.get("sessionCookie"), str) or not str(argument.get("sessionCookie")).strip():
+        return False, "missing_sessionCookie_for_launch"
     raw = argument.get("spreadsheetUrl")
     if not isinstance(raw, str) or not raw.strip():
         return False, "spreadsheetUrl_missing_or_empty"
@@ -282,6 +344,7 @@ def validate_dm_message_sender_argument(
     argument: dict[str, Any],
     *,
     max_message_chars: Optional[int] = None,
+    for_launch: bool = False,
 ) -> tuple[bool, str]:
     from config import MAX_PHANTOM_DM_MESSAGE_CHARS
 
@@ -290,7 +353,7 @@ def validate_dm_message_sender_argument(
         mlen = MAX_PHANTOM_DM_MESSAGE_CHARS
     if not isinstance(argument, dict):
         return False, "argument_not_object"
-    return _validate_dm_message_sender(argument, max_message_len=mlen)
+    return _validate_dm_message_sender(argument, max_message_len=mlen, for_launch=for_launch)
 
 
 def _validate_array(argument: dict[str, Any]) -> tuple[bool, str]:
@@ -323,14 +386,21 @@ def _validate_singular(
     argument: dict[str, Any],
     *,
     max_message_len: int,
+    for_launch: bool = False,
 ) -> tuple[bool, str]:
     allowed = set(_SINGULAR_ARG_KEYS)
+    if for_launch:
+        allowed |= _PHANTOM_SESSION_FIELD_KEYS
     extra = set(argument.keys()) - allowed
     if extra:
         return False, f"argument_extra_keys:{','.join(sorted(extra))}"
-    for forbidden_session in _PHANTOM_SESSION_FIELD_KEYS:
-        if forbidden_session in argument:
-            return False, f"forbidden_key:{forbidden_session}"
+    if for_launch:
+        if not isinstance(argument.get("sessionCookie"), str) or not str(argument.get("sessionCookie")).strip():
+            return False, "missing_sessionCookie_for_launch"
+    else:
+        for forbidden_session in _PHANTOM_SESSION_FIELD_KEYS:
+            if forbidden_session in argument:
+                return False, f"forbidden_key:{forbidden_session}"
 
     raw = argument.get("profileUrl")
     if not isinstance(raw, str) or not raw.strip():
@@ -371,12 +441,14 @@ def validate_engagement_argument(
     *,
     bonus_argument: Optional[dict[str, Any]] = None,
     max_message_chars: Optional[int] = None,
+    for_launch: bool = False,
 ) -> tuple[bool, str]:
     """Validate argument for the configured mode (singular profileUrl vs array profileUrls).
 
     For singular `message`, length must be `<= max_message_chars` (default: `MAX_PHANTOM_DM_MESSAGE_CHARS`
     in config). Use `max_message_chars=MAX_CONNECT_NOTE_CHARS` for connection requests.
-  Session auth is not validated here — Phantombuster Workspace provides the LinkedIn session.
+    Default (`for_launch=False`): dynamic lead fields only — no sessionCookie. Use `for_launch=True` after
+    merging UI session from GET /agents/fetch (PhantombusterClient).
     """
     from config import MAX_PHANTOM_DM_MESSAGE_CHARS, PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE
 
@@ -389,7 +461,7 @@ def validate_engagement_argument(
     if bonus_argument is not None:
         return False, "bonus_argument_not_supported_use_phantombuster_workspace_session"
     if PHANTOMBUSTER_ENGAGEMENT_PROFILE_MODE == "singular":
-        return _validate_singular(argument, max_message_len=mlen)
+        return _validate_singular(argument, max_message_len=mlen, for_launch=for_launch)
     return _validate_array(argument)
 
 

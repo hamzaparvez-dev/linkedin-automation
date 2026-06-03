@@ -152,5 +152,69 @@ class TestWaitForCompletion(unittest.TestCase):
         self.assertNotEqual(out.get("status"), "finished")
 
 
+class TestLaunchFetchAndMerge(unittest.TestCase):
+    def test_launch_fetches_ui_session_and_posts_merged_argument(self) -> None:
+        client = PhantombusterClient()
+        fetch_resp = MagicMock()
+        fetch_resp.ok = True
+        fetch_resp.status_code = 200
+        fetch_resp.url = "https://api.phantombuster.com/api/v2/agents/fetch"
+        fetch_resp.text = ""
+        fetch_resp.json = MagicMock(
+            return_value={
+                "argument": {
+                    "sessionCookie": "AQED" + "z" * 100,
+                    "userAgent": "Mozilla/5.0 (workspace)",
+                }
+            }
+        )
+        launch_resp = MagicMock()
+        launch_resp.ok = True
+        launch_resp.status_code = 200
+        launch_resp.url = "https://api.phantombuster.com/api/v2/agents/launch"
+        launch_resp.text = ""
+        launch_resp.json = MagicMock(return_value={"containerId": "container-99"})
+
+        client.session = MagicMock()
+        client.session.get = MagicMock(return_value=fetch_resp)
+        client.session.post = MagicMock(return_value=launch_resp)
+
+        dynamic = {
+            "profileUrl": "https://www.linkedin.com/in/example-person",
+            "spreadsheetUrl": "https://www.linkedin.com/in/example-person",
+            "numberOfAddsPerLaunch": 1,
+            "message": "Hello",
+        }
+        cid = client._launch_agent_unlocked("agent-42", dynamic, None)
+        self.assertEqual(cid, "container-99")
+        client.session.get.assert_called_once()
+        get_kwargs = client.session.get.call_args.kwargs
+        self.assertEqual(get_kwargs.get("params"), {"id": "agent-42"})
+        post_payload = client.session.post.call_args.kwargs["json"]
+        arg = post_payload["argument"]
+        self.assertEqual(arg["message"], "Hello")
+        self.assertTrue(str(arg.get("sessionCookie", "")).startswith("AQED"))
+        self.assertEqual(arg.get("userAgent"), "Mozilla/5.0 (workspace)")
+
+    def test_launch_raises_when_fetch_has_no_session_cookie(self) -> None:
+        client = PhantombusterClient()
+        fetch_resp = MagicMock()
+        fetch_resp.ok = True
+        fetch_resp.status_code = 200
+        fetch_resp.json = MagicMock(return_value={"argument": {"spreadsheetUrl": "https://example.com"}})
+        client.session = MagicMock()
+        client.session.get = MagicMock(return_value=fetch_resp)
+
+        dynamic = {
+            "profileUrl": "https://www.linkedin.com/in/example-person",
+            "spreadsheetUrl": "https://www.linkedin.com/in/example-person",
+            "numberOfAddsPerLaunch": 1,
+            "message": "Hello",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            client._launch_agent_unlocked("agent-42", dynamic, None)
+        self.assertIn("agent_fetch_missing_sessionCookie", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

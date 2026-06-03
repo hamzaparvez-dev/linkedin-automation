@@ -10,9 +10,11 @@ from core.phantom_payload import (
     append_fetch_output_to_summary,
     build_dm_message_sender_argument,
     build_engagement_argument,
+    extract_ui_session_from_agent_fetch,
     finalize_dm_message_sender_argument,
     looks_plausible_browser_user_agent,
     merge_phantom_launch_defaults,
+    merge_ui_session_into_launch_argument,
     normalize_engagement_linkedin_url,
     phantom_connect_deduplication_skipped,
     phantom_failure_suggests_linkedin_session_issue,
@@ -258,7 +260,7 @@ class TestDmMessageSenderPayload(unittest.TestCase):
         ok, msg = validate_dm_message_sender_argument(m)
         self.assertTrue(ok, msg)
 
-    def test_dm_rejects_session_cookie_key(self) -> None:
+    def test_dm_rejects_session_cookie_key_before_launch(self) -> None:
         a = {
             "spreadsheetUrl": "https://www.linkedin.com/in/ok",
             "message": "m",
@@ -271,6 +273,14 @@ class TestDmMessageSenderPayload(unittest.TestCase):
         ok, msg = validate_dm_message_sender_argument(a)
         self.assertFalse(ok)
         self.assertIn("sessionCookie", msg)
+
+    def test_dm_accepts_session_when_for_launch(self) -> None:
+        a = build_dm_message_sender_argument("https://www.linkedin.com/in/ok", "m")
+        merged = merge_ui_session_into_launch_argument(
+            a, {"sessionCookie": _FAKE_SESSION, "userAgent": "Mozilla/5.0 (ui)"}
+        )
+        ok, msg = validate_dm_message_sender_argument(merged, for_launch=True)
+        self.assertTrue(ok, msg)
 
     def test_dm_rejects_forbidden_key(self) -> None:
         a = {

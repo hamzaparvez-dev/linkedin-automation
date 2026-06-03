@@ -1,6 +1,6 @@
 """
 integrations/phantombuster_client.py
-Phantombuster API client for Auto-Connect and Auto-DM: launch, poll, optional fetch-output.
+Phantombuster API client for Auto-Connect and Auto-DM: fetch UI session, launch, poll, fetch-output.
 (LinkedIn profile-scraper batch enrichment was removed; engagement uses per-account agent ids from accounts.json / env.)
 """
 
@@ -201,13 +201,83 @@ class PhantombusterClient:
             }
         )
 
+    def _fetch_agent_unlocked(self, agent_id: str) -> dict[str, Any]:
+        """GET /agents/fetch — saved phantom config (sessionCookie lives in argument)."""
+        url = f"{PHANTOMBUSTER_BASE_URL}/agents/fetch"
+        last_err: Exception | None = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                resp = self.session.get(url, params={"id": agent_id}, timeout=60)
+                if not resp.ok:
+                    last_err = PhantombusterHttpError.from_response(resp, context="GET /agents/fetch")
+                    logger.warning(
+                        "[Phantombuster] fetch agent attempt %s/%s failed: %s",
+                        attempt,
+                        MAX_RETRIES,
+                        last_err,
+                    )
+                    time.sleep(2**attempt)
+                    continue
+                try:
+                    data = resp.json()
+                except (ValueError, json.JSONDecodeError) as je:
+                    last_err = PhantombusterHttpError(
+                        status_code=resp.status_code,
+                        body_snippet=f"invalid JSON ({je}); body={_truncate_pb_body(resp.text or '', max_len=800)}",
+                        context="GET /agents/fetch",
+                        url=str(getattr(resp, "url", "") or ""),
+                    )
+                    time.sleep(2**attempt)
+                    continue
+                if not isinstance(data, dict):
+                    last_err = ValueError(f"agent_fetch_not_object:{type(data).__name__}")
+                    time.sleep(2**attempt)
+                    continue
+                return data
+            except requests.RequestException as e:
+                r = getattr(e, "response", None)
+                last_err = (
+                    PhantombusterHttpError.from_response(r, context="GET /agents/fetch")
+                    if r is not None
+                    else e
+                )
+                logger.warning(
+                    "[Phantombuster] fetch agent attempt %s/%s failed: %s",
+                    attempt,
+                    MAX_RETRIES,
+                    last_err,
+                )
+                time.sleep(2**attempt)
+        raise last_err or RuntimeError("agent_fetch_failed")
+
+    def _merge_ui_session_for_launch(self, agent_id: str, argument: dict[str, Any]) -> dict[str, Any]:
+        """
+        Launch overwrites the phantom's saved argument — inject fresh sessionCookie/userAgent from UI
+        (GET /agents/fetch) into our dynamic lead payload before POST /agents/launch.
+        """
+        from core.phantom_payload import (
+            extract_ui_session_from_agent_fetch,
+            merge_ui_session_into_launch_argument,
+        )
+
+        fetch_payload = self._fetch_agent_unlocked(agent_id)
+        ui_session = extract_ui_session_from_agent_fetch(fetch_payload)
+        if not ui_session.get("sessionCookie"):
+            raise ValueError("agent_fetch_missing_sessionCookie")
+        merged = merge_ui_session_into_launch_argument(argument, ui_session)
+        logger.info(
+            "[Phantombuster] merged UI session into launch argument agent_id=%s (sessionCookie redacted in logs)",
+            agent_id,
+        )
+        return merged
+
     def _launch_agent_unlocked(
         self,
         agent_id: str,
         argument: dict[str, Any],
         bonus_argument: Optional[dict[str, Any]],
     ) -> str:
-        """POST /agents/launch (caller must hold per-agent lock when using run_agent)."""
+        """GET /agents/fetch + merge UI session, then POST /agents/launch (caller holds per-agent lock)."""
         if not agent_id:
             raise ValueError("agent_id is required")
         if bonus_argument is not None:
@@ -215,11 +285,16 @@ class PhantombusterClient:
                 "bonus_argument_not_supported_use_phantombuster_workspace_session"
             )
 
-        if isinstance(argument, dict) and (
+        launch_argument = argument
+        is_engagement_argument = isinstance(argument, dict) and (
             argument.get("profileUrls") is not None
             or argument.get("profileUrl") is not None
             or argument.get("spreadsheetUrl") is not None
-        ):
+        )
+        if is_engagement_argument:
+            launch_argument = self._merge_ui_session_for_launch(agent_id, dict(argument))
+
+        if isinstance(launch_argument, dict) and is_engagement_argument:
             from core.phantom_payload import (
                 is_message_sender_style_argument,
                 log_engagement_argument_json,
@@ -227,29 +302,38 @@ class PhantombusterClient:
                 validate_engagement_argument,
             )
 
-            if is_message_sender_style_argument(argument):
-                ok, msg = validate_dm_message_sender_argument(argument)
+            if is_message_sender_style_argument(launch_argument):
+                ok, msg = validate_dm_message_sender_argument(launch_argument, for_launch=True)
             else:
-                ok, msg = validate_engagement_argument(argument)
+                ok, msg = validate_engagement_argument(launch_argument, for_launch=True)
             if not ok:
                 raise ValueError(f"invalid_phantom_argument:{msg}")
-            log_engagement_argument_json(argument, agent_id=agent_id)
+            log_engagement_argument_json(launch_argument, agent_id=agent_id)
 
-        if isinstance(argument, dict) and (
-            argument.get("profileUrl") is not None or argument.get("spreadsheetUrl") is not None
+        if isinstance(launch_argument, dict) and (
+            launch_argument.get("profileUrl") is not None or launch_argument.get("spreadsheetUrl") is not None
         ):
+            from core.phantom_payload import redact_phantom_argument_for_log
+
             logger.info(
                 "[DEBUG] final_argument_json: %s",
-                json.dumps(argument, ensure_ascii=False, sort_keys=True),
+                json.dumps(
+                    redact_phantom_argument_for_log(launch_argument),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
             )
 
         url = f"{PHANTOMBUSTER_BASE_URL}/agents/launch"
-        payload: dict[str, Any] = {"id": agent_id, "argument": argument}
+        payload: dict[str, Any] = {"id": agent_id, "argument": launch_argument}
 
         try:
             from core.phantom_payload import redact_phantom_argument_for_log
 
-            log_payload: dict[str, Any] = {"id": agent_id, "argument": redact_phantom_argument_for_log(argument)}
+            log_payload: dict[str, Any] = {
+                "id": agent_id,
+                "argument": redact_phantom_argument_for_log(launch_argument),
+            }
             logger.info(
                 "[Phantombuster] launch API payload JSON: %s",
                 json.dumps(log_payload, ensure_ascii=False),
